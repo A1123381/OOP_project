@@ -5,6 +5,8 @@ import com.exambattle.common.protocol.Protocol;
 import com.exambattle.common.protocol.bank.ExamDetail;
 import com.exambattle.common.protocol.bank.ExamRequest;
 import com.exambattle.common.protocol.bank.ExamSummary;
+import com.exambattle.common.protocol.bank.GroupRequest;
+import com.exambattle.common.protocol.bank.GroupSaved;
 import com.exambattle.common.protocol.bank.ImportDone;
 import com.exambattle.common.protocol.bank.ImportRequest;
 import com.exambattle.common.protocol.bank.OptionData;
@@ -82,14 +84,30 @@ public final class ExamService {
 
     public QuestionData addQuestion(long examId, QuestionData data, UserInfo user) throws BankException {
         requireOwnedExam(examId, user);
-        return toData(repos.questions().createInExam(examId, BankValidator.question(data, user.userId())), true);
+        NewQuestion valid = BankValidator.question(data, user.userId());
+        requireGroupInExam(examId, valid.groupId());
+        return toData(repos.questions().createInExam(examId, valid), true);
     }
 
     public QuestionData updateQuestion(long examId, long questionId, QuestionData data, UserInfo user)
             throws BankException {
         requireOwnedExam(examId, user);
         requireQuestionInExam(examId, questionId);
-        return toData(repos.questions().update(questionId, BankValidator.question(data, user.userId())), true);
+        NewQuestion valid = BankValidator.question(data, user.userId());
+        requireGroupInExam(examId, valid.groupId());
+        return toData(repos.questions().update(questionId, valid), true);
+    }
+
+    /** 修改題組文章；同組的題目一起改變（D-034）。 */
+    public GroupSaved updateGroup(GroupRequest request, UserInfo user) throws BankException {
+        if (request.examId() == null || request.groupId() == null) {
+            throw BankException.invalid("缺少 examId 或 groupId");
+        }
+        requireOwnedExam(request.examId(), user);
+        requireGroupInExam(request.examId(), request.groupId());
+        String passage = BankValidator.passage(request.passage());
+        repos.questions().updatePassage(request.groupId(), passage);
+        return new GroupSaved(request.examId(), request.groupId(), passage);
     }
 
     public void deleteQuestion(long examId, long questionId, UserInfo user) throws BankException {
@@ -117,11 +135,22 @@ public final class ExamService {
         List<NewQuestion> valid = new ArrayList<>();
         for (int i = 0; i < questions.size(); i++) {
             try {
-                valid.add(BankValidator.question(questions.get(i), user.userId()));
+                QuestionData q = questions.get(i);
+                // 匯入時題組由 groups／groupIndexes 指定，題目本身的題組欄位不使用
+                valid.add(BankValidator.question(q == null ? null : q.withGroup(null, null), user.userId()));
             } catch (BankException e) {
                 throw BankException.invalid("第 " + (i + 1) + " 題：" + e.getMessage());
             }
         }
+        List<String> groups = new ArrayList<>();
+        for (int g = 0; request.groups() != null && g < request.groups().size(); g++) {
+            try {
+                groups.add(BankValidator.passage(request.groups().get(g)));
+            } catch (BankException e) {
+                throw BankException.invalid("第 " + (g + 1) + " 個題組：" + e.getMessage());
+            }
+        }
+        List<Integer> groupIndexes = importGroupIndexes(request.groupIndexes(), questions.size(), groups.size());
 
         NewExam newExam = null;
         if (request.newExam() != null) {
@@ -131,8 +160,39 @@ public final class ExamService {
         } else {
             requireOwnedExam(request.examId(), user);
         }
-        long examId = repos.imports().importQuestions(request.examId(), newExam, valid);
+        long examId = repos.imports().importQuestions(request.examId(), newExam, valid, groups, groupIndexes);
         return new ImportDone(summary(requireExam(examId), subjectsById()), valid.size());
+    }
+
+    /** 每題的題組位置必須在範圍內，且每個題組至少有一題。 */
+    private static List<Integer> importGroupIndexes(List<Integer> raw, int questionCount, int groupCount)
+            throws BankException {
+        if (raw == null) {
+            if (groupCount > 0) {
+                throw BankException.invalid("有題組但沒有指定題目所屬的題組（groupIndexes）");
+            }
+            return java.util.Collections.nCopies(questionCount, null);
+        }
+        if (raw.size() != questionCount) {
+            throw BankException.invalid("groupIndexes 的數量必須與題目相同");
+        }
+        boolean[] used = new boolean[groupCount];
+        for (int i = 0; i < raw.size(); i++) {
+            Integer index = raw.get(i);
+            if (index == null) {
+                continue;
+            }
+            if (index < 0 || index >= groupCount) {
+                throw BankException.invalid("第 " + (i + 1) + " 題：找不到指定的題組");
+            }
+            used[index] = true;
+        }
+        for (int g = 0; g < groupCount; g++) {
+            if (!used[g]) {
+                throw BankException.invalid("第 " + (g + 1) + " 個題組沒有任何題目");
+            }
+        }
+        return raw;
     }
 
     /** questionIds 必須恰好是考卷目前的全部題目（不多、不少、不重複）。 */
@@ -166,6 +226,13 @@ public final class ExamService {
         }
     }
 
+    /** groupId 為 null 時不檢查；否則必須是這份考卷中某些題目所屬的題組。 */
+    private void requireGroupInExam(long examId, Long groupId) throws BankException {
+        if (groupId != null && !repos.questions().isGroupInExam(examId, groupId)) {
+            throw new BankException(ErrorCode.GROUP_NOT_FOUND, "考卷中找不到題組 #" + groupId);
+        }
+    }
+
     private void requireSubject(long subjectId) throws BankException {
         if (repos.subjects().findById(subjectId).isEmpty()) {
             throw new BankException(ErrorCode.SUBJECT_NOT_FOUND, "找不到分類 #" + subjectId);
@@ -194,6 +261,6 @@ public final class ExamService {
                 .map(o -> new OptionData(o.id(), o.content(), reveal ? o.correct() : null))
                 .toList();
         return new QuestionData(q.id(), q.type(), q.content(), q.explanation(), options,
-                reveal ? q.trueFalseAnswer() : null, q.answerSet());
+                reveal ? q.trueFalseAnswer() : null, q.answerSet(), q.groupId(), q.passage());
     }
 }

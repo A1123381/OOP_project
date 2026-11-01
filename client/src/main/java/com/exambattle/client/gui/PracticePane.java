@@ -79,6 +79,8 @@ final class PracticePane {
     // 作答中
     private PracticeSession practice;
     private Timeline timer;
+    /** 題組文章是否展開；換題時沿用使用者的選擇。 */
+    private boolean passageExpanded = true;
 
     /** @param onFinished 交卷完成後呼叫（例如讓紀錄、錯題本重新整理） */
     PracticePane(GuiSession session, Runnable onFinished) {
@@ -316,7 +318,13 @@ final class PracticePane {
             showFeedback(feedback, q, practice.result(index));
         }
 
-        VBox body = new VBox(14, type, content, optionsBox, feedback);
+        VBox body = new VBox(14, type);
+        if (q.passage() != null) {
+            javafx.scene.control.TitledPane passage = PassageView.create(q.passage(), 15, passageExpanded);
+            passage.expandedProperty().addListener((obs, a, b) -> passageExpanded = b);
+            body.getChildren().add(passage);
+        }
+        body.getChildren().addAll(content, optionsBox, feedback);
         body.setPadding(new Insets(20));
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);

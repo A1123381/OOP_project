@@ -58,6 +58,8 @@ public enum MessageType {
     REORDER_QUESTIONS(true),
     IMPORT_QUESTIONS(true),
     IMPORT_DONE(false),
+    UPDATE_GROUP(true),
+    GROUP_SAVED(false),
 
     // 單人練習、紀錄、錯題本（第五階段）
     START_PRACTICE(true),

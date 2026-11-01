@@ -16,6 +16,7 @@ import java.util.List;
  * <ul>
  *   <li>選擇題 2–10 個選項，內容不可空白；單選題最多 1 個正確選項，多選題不限</li>
  *   <li>沒有正確選項或是非題答案為 null，表示「答案未設定」；系統不推測答案</li>
+ *   <li>題組文章 1–20,000 字元（D-034）</li>
  * </ul>
  */
 final class BankValidator {
@@ -57,7 +58,8 @@ final class BankValidator {
             if (!rawOptions.isEmpty()) {
                 throw BankException.invalid("是非題不使用選項");
             }
-            return new NewQuestion(data.type(), content, explanation, data.trueFalseAnswer(), ownerId, List.of());
+            return new NewQuestion(data.type(), content, explanation, data.trueFalseAnswer(), ownerId, List.of(),
+                    data.groupId(), newPassage(data));
         }
 
         if (rawOptions.size() < Protocol.MIN_OPTIONS || rawOptions.size() > Protocol.MAX_OPTIONS) {
@@ -76,7 +78,18 @@ final class BankValidator {
         if (data.type() == QuestionType.SINGLE_CHOICE && correct > 1) {
             throw BankException.invalid("單選題只能有一個正確答案");
         }
-        return new NewQuestion(data.type(), content, explanation, null, ownerId, options);
+        return new NewQuestion(data.type(), content, explanation, null, ownerId, options,
+                data.groupId(), newPassage(data));
+    }
+
+    /** 題組文章（D-034）：1–{@value Protocol#MAX_PASSAGE_CHARS} 字元。 */
+    static String passage(String raw) throws BankException {
+        return requiredText(raw, Protocol.MAX_PASSAGE_CHARS, "題組文章");
+    }
+
+    /** 只帶 passage（沒有 groupId）表示建立新題組；帶 groupId 時忽略 passage。 */
+    private static String newPassage(QuestionData data) throws BankException {
+        return data.groupId() == null && data.passage() != null ? passage(data.passage()) : null;
     }
 
     private static String requiredText(String raw, int max, String field) throws BankException {

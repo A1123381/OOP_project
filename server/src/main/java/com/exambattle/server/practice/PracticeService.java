@@ -144,7 +144,8 @@ public final class PracticeService {
         for (int i = 0; i < questions.size(); i++) {
             QuestionRecord q = questions.get(i);
             shown.add(new PracticeQuestion(i, q.id(), q.type(), q.content(),
-                    q.options().stream().map(o -> new PracticeOption(o.id(), o.content())).toList()));
+                    q.options().stream().map(o -> new PracticeOption(o.id(), o.content())).toList(),
+                    q.groupId(), q.passage()));
         }
         return new PracticeStarted(practice.id, practice.mode, practice.revealMode, title, now.toString(), shown);
     }

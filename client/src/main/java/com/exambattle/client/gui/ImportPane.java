@@ -5,6 +5,7 @@ import com.exambattle.client.gui.model.QuestionTypes;
 import com.exambattle.client.importer.AnswerKeyApplier;
 import com.exambattle.client.importer.ImportDraftFile;
 import com.exambattle.client.importer.ImportDraftFile.ImportDraft;
+import com.exambattle.client.importer.ImportGroup;
 import com.exambattle.client.importer.ImportItem;
 import com.exambattle.common.protocol.Message;
 import com.exambattle.common.protocol.MessageCodec;
@@ -79,6 +80,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>原始檔只在本機讀取；對照用的頁面圖片即時轉出、只存在記憶體（D-027、D-032）</li>
  *   <li>答案由使用者設定或匯入答案卷，系統不推測（D-030）</li>
  *   <li>匯入題庫為單一請求、單一交易（D-031）</li>
+ *   <li>題組（閱讀測驗、克漏字）的文章由同組題目共用，在校正區上方編輯（D-034、D-035）</li>
  * </ul>
  */
 final class ImportPane {
@@ -109,6 +111,15 @@ final class ImportPane {
     private final Label problem = new Label();
     private final Label warnings = new Label();
     private final VBox editorBox;
+
+    // 題組
+    private final Label groupTitle = new Label();
+    private final TextArea passage = new TextArea();
+    private final Label groupWarnings = new Label();
+    private final Button leaveGroup = new Button("移出題組");
+    private final Button joinPrevious = new Button("加入上一題的題組");
+    private final Button newGroup = new Button("新增題組…");
+    private final VBox groupBox;
 
     // 對照
     private final ImageView pageImage = new ImageView();
@@ -188,7 +199,28 @@ final class ImportPane {
         problem.setStyle("-fx-text-fill: #c62828;");
         warnings.setWrapText(true);
         warnings.setStyle("-fx-text-fill: #b26a00;");
-        editorBox = new VBox(10, bold("校正"), new HBox(8, new Label("題號"), numberField,
+
+        passage.setWrapText(true);
+        passage.setPrefRowCount(8);
+        passage.setPromptText("題組文章（同組題目共用；克漏字的空格可寫成【11】）");
+        passage.textProperty().addListener((obs, a, b) -> {
+            if (current != null && current.group() != null && !b.equals(current.group().passage())) {
+                current.group().setPassage(b);
+                refreshCurrent();
+            }
+        });
+        groupTitle.setStyle("-fx-font-weight: bold;");
+        groupWarnings.setWrapText(true);
+        groupWarnings.setStyle("-fx-text-fill: #b26a00;");
+        leaveGroup.setOnAction(e -> leaveGroup());
+        joinPrevious.setOnAction(e -> joinPreviousGroup());
+        newGroup.setOnAction(e -> createGroup());
+        groupTitle.setWrapText(true);
+        groupBox = new VBox(6, groupTitle, new HBox(8, leaveGroup, joinPrevious, newGroup), passage, groupWarnings);
+        groupBox.setPadding(new Insets(8));
+        groupBox.setStyle("-fx-background-color: #f3f6ee; -fx-background-radius: 4;");
+
+        editorBox = new VBox(10, bold("校正"), groupBox, new HBox(8, new Label("題號"), numberField,
                 new Label("（用於對應答案卷）")), editor.root(), problem, warnings);
         editorBox.setPadding(new Insets(12));
         ScrollPane editorScroll = new ScrollPane(editorBox);
@@ -286,8 +318,7 @@ final class ImportPane {
         long ocrPages = result.pages().stream().filter(p -> p.method() == ExtractionMethod.OCR).count();
         status.setText((result.cancelled() ? "已取消：完成 " : "完成：") + result.pages().size() + " / "
                 + result.totalPages() + " 頁（其中 " + ocrPages + " 頁使用 OCR）");
-        show(result.fileName(), result.pages(),
-                QuestionSplitter.split(result.pages()).stream().map(ImportItem::from).toList());
+        show(result.fileName(), result.pages(), ImportItem.fromSplit(QuestionSplitter.split(result.pages())));
     }
 
     private void fail(String message) {
@@ -343,7 +374,9 @@ final class ImportPane {
             if (first.length() > 24) {
                 first = first.substring(0, 24) + "…";
             }
-            text.setText(statusMark(item) + " " + numberText(item) + ". [" + type + "] " + first);
+            String tags = (item.group() == null ? "" : "〔" + item.group().label() + "〕")
+                    + (item.unsupported() ? "〔非選擇題〕" : "");
+            text.setText(statusMark(item) + " " + numberText(item) + ". " + tags + "[" + type + "] " + first);
             text.setStyle(switch (item.status()) {
                 case NEEDS_FIX -> "-fx-text-fill: #c62828;";
                 case NO_ANSWER -> "-fx-text-fill: #b26a00;";
@@ -375,12 +408,14 @@ final class ImportPane {
             numberField.setText("");
             problem.setText("");
             warnings.setText("");
+            showGroup(null);
             showReference(null);
             return;
         }
         numberField.setText(numberText(item).equals("?") ? "" : numberText(item));
         editor.load(item.draft());
         editorBox.setDisable(item.imported());
+        showGroup(item);
         current = item;
         refreshCurrent();
         showReference(item);
@@ -400,6 +435,110 @@ final class ImportPane {
         warnings.setText(current.warnings().isEmpty() ? "" : "擷取時的提醒：" + String.join("；", current.warnings()));
         items.refresh();
         refreshSummary();
+    }
+
+    // ---------- 題組
+
+    /** 顯示所選題目的題組文章；不屬於題組時只顯示「新增題組」。 */
+    private void showGroup(ImportItem item) {
+        ImportGroup group = item == null ? null : item.group();
+        boolean inGroup = group != null;
+        passage.setVisible(inGroup);
+        passage.setManaged(inGroup);
+        leaveGroup.setVisible(inGroup);
+        leaveGroup.setManaged(inGroup);
+        joinPrevious.setDisable(previousGroup(item) == null || previousGroup(item) == group);
+        if (!inGroup) {
+            groupTitle.setText("不屬於題組");
+            groupWarnings.setText("");
+            return;
+        }
+        long size = items.getItems().stream().filter(i -> i.group() == group).count();
+        groupTitle.setText(group.label() + "（同組 " + size + " 題共用這篇文章）");
+        passage.setText(group.passage());
+        groupWarnings.setText(group.warnings().isEmpty() ? "" : "擷取時的提醒：" + String.join("；", group.warnings()));
+    }
+
+    /** 清單中上一題所屬的題組。 */
+    private ImportGroup previousGroup(ImportItem item) {
+        int index = item == null ? -1 : items.getItems().indexOf(item);
+        return index <= 0 ? null : items.getItems().get(index - 1).group();
+    }
+
+    private void leaveGroup() {
+        if (current != null && current.group() != null) {
+            current.setGroup(null);
+            showGroup(current);
+            refreshCurrent();
+        }
+    }
+
+    private void joinPreviousGroup() {
+        ImportGroup group = previousGroup(current);
+        if (current != null && group != null) {
+            current.setGroup(group);
+            showGroup(current);
+            refreshCurrent();
+        }
+    }
+
+    /** 選擇題號範圍並貼上文章，把範圍內（尚未匯入）的題目放進新的題組。 */
+    private void createGroup() {
+        Dialog<ImportGroup> dialog = new Dialog<>();
+        dialog.setTitle("新增題組");
+        dialog.setHeaderText("範圍內的題目會共用這篇文章（原本屬於其他題組的題目會移過來）。");
+        String number = current == null || current.number() == null ? "" : String.valueOf(current.number());
+        TextField from = new TextField(number);
+        TextField to = new TextField(number);
+        from.setPrefColumnCount(4);
+        to.setPrefColumnCount(4);
+        TextArea text = new TextArea(current != null && current.group() != null ? current.group().passage() : "");
+        text.setWrapText(true);
+        text.setPrefRowCount(10);
+        text.setPromptText("貼上文章；克漏字的空格可寫成【11】");
+        VBox content = new VBox(8, new HBox(8, new Label("第"), from, new Label("題 至 第"), to, new Label("題")), text);
+        content.setPrefWidth(560);
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, e -> {
+            Optional<String> error = groupRangeError(from.getText(), to.getText());
+            if (error.isEmpty()) {
+                error = ImportGroup.manual(text.getText(), null, null, 1).problem();
+            }
+            if (error.isPresent()) {
+                Dialogs.error(error.get());
+                e.consume();
+            }
+        });
+        dialog.setResultConverter(b -> b != ButtonType.OK ? null : ImportGroup.manual(text.getText(),
+                Integer.parseInt(from.getText().strip()), Integer.parseInt(to.getText().strip()),
+                current == null ? 1 : current.sourcePage()));
+        dialog.showAndWait().ifPresent(group -> {
+            int first = Integer.parseInt(from.getText().strip());
+            int last = Integer.parseInt(to.getText().strip());
+            items.getItems().stream()
+                    .filter(i -> !i.imported() && i.number() != null && i.number() >= first && i.number() <= last)
+                    .forEach(i -> i.setGroup(group));
+            if (current != null) {
+                select(current);
+            }
+            items.refresh();
+            refreshSummary();
+        });
+    }
+
+    private Optional<String> groupRangeError(String from, String to) {
+        if (!from.strip().matches("\\d{1,3}") || !to.strip().matches("\\d{1,3}")) {
+            return Optional.of("請輸入題號範圍");
+        }
+        int first = Integer.parseInt(from.strip());
+        int last = Integer.parseInt(to.strip());
+        if (first > last) {
+            return Optional.of("起始題號不可大於結束題號");
+        }
+        boolean any = items.getItems().stream()
+                .anyMatch(i -> !i.imported() && i.number() != null && i.number() >= first && i.number() <= last);
+        return any ? Optional.empty() : Optional.of("範圍內沒有尚未匯入的題目");
     }
 
     private void refreshSummary() {
@@ -544,6 +683,9 @@ final class ImportPane {
             items.refresh();
             refreshSummary();
             StringBuilder message = new StringBuilder("已套用 " + s.applied() + " 題的答案。");
+            if (!result.nonChoice().isEmpty()) {
+                message.append("\n答案卷標為「／」的非選擇題（略過）：").append(result.nonChoice());
+            }
             if (!s.notFound().isEmpty()) {
                 message.append("\n找不到對應題號：").append(s.notFound());
             }
@@ -594,6 +736,9 @@ final class ImportPane {
     static String describe(AnswerKeyParser.Result result) {
         StringBuilder text = new StringBuilder();
         result.answers().forEach((n, key) -> text.append(n).append(" → ").append(key.token()).append('\n'));
+        if (!result.nonChoice().isEmpty()) {
+            text.append("\n非選擇題（略過）：").append(result.nonChoice()).append('\n');
+        }
         if (!result.warnings().isEmpty()) {
             text.append("\n⚠ ").append(String.join("\n⚠ ", result.warnings()));
         }
@@ -686,7 +831,7 @@ final class ImportPane {
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         ((Button) dialog.getDialogPane().lookupButton(ButtonType.OK)).setText("匯入");
 
-        List<QuestionData> questions = selected.stream().map(i -> i.draft().toData()).toList();
+        ImportItem.RequestParts questions = ImportItem.requestParts(selected);
         dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, e -> {
             Optional<String> error = Optional.empty();
             if (toNew.isSelected()) {
@@ -724,13 +869,13 @@ final class ImportPane {
 
     private static ImportRequest buildRequest(boolean toNew, TextField title, ComboBox<SubjectInfo> subject,
                                               TextField year, TextField type, ComboBox<ExamSummary> existing,
-                                              List<QuestionData> questions) {
+                                              ImportItem.RequestParts parts) {
         if (toNew) {
             return new ImportRequest(null,
                     new ExamDraft(title.getText(), subject.getValue(), year.getText(), type.getText()).toRequest(null),
-                    questions);
+                    parts.questions(), parts.groups(), parts.groupIndexes());
         }
-        return new ImportRequest(existing.getValue().id(), null, questions);
+        return new ImportRequest(existing.getValue().id(), null, parts.questions(), parts.groups(), parts.groupIndexes());
     }
 
     // ---------- 草稿

@@ -20,11 +20,11 @@ final class Snapshots {
     private Snapshots() {
     }
 
-    /** 題目的完整內容（含正確答案與解說）。 */
+    /** 題目的完整內容（含正確答案、解說與題組文章）。 */
     static QuestionData full(QuestionRecord q) {
         return new QuestionData(q.id(), q.type(), q.content(), q.explanation(),
                 q.options().stream().map(o -> new OptionData(o.id(), o.content(), o.correct())).toList(),
-                q.trueFalseAnswer(), q.answerSet());
+                q.trueFalseAnswer(), q.answerSet(), q.groupId(), q.passage());
     }
 
     static String toJson(Object value) {

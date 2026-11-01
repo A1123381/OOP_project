@@ -12,7 +12,7 @@ public interface QuestionDao {
     /** 新增題目與選項，並放到考卷最後（同一個交易）。 */
     QuestionRecord createInExam(long examId, NewQuestion question);
 
-    /** 更新題目內容；選項整組取代（選項 id 會改變）。 */
+    /** 更新題目內容；選項整組取代（選項 id 會改變）。原本的題組若不再有題目就一併刪除。 */
     QuestionRecord update(long questionId, NewQuestion question);
 
     Optional<QuestionRecord> findById(long questionId);
@@ -33,9 +33,15 @@ public interface QuestionDao {
 
     boolean isInExam(long examId, long questionId);
 
-    /** 從考卷移除題目；若題目不再屬於任何考卷就一併刪除（同一個交易）。 */
+    /** 從考卷移除題目；若題目不再屬於任何考卷就一併刪除，題組也不再有題目時一併刪除（同一個交易）。 */
     void removeFromExam(long examId, long questionId);
 
     /** 依給定順序重新編號；呼叫端須保證 questionIds 恰為考卷的全部題目。 */
     void reorder(long examId, List<Long> questionIds);
+
+    /** 考卷中是否有題目屬於這個題組。 */
+    boolean isGroupInExam(long examId, long groupId);
+
+    /** 修改題組文章（同組的題目一起改變）。 */
+    void updatePassage(long groupId, String passage);
 }

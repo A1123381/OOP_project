@@ -70,6 +70,7 @@ class JdbcPracticeDaoTest {
                     "DELETE FROM wrong_questions WHERE user_id = ?",
                     "DELETE FROM exams WHERE created_by = ?",
                     "DELETE FROM questions WHERE created_by = ?",
+                    "DELETE FROM question_groups WHERE created_by = ?",
                     "DELETE FROM subjects WHERE created_by = ?",
                     "DELETE FROM users WHERE id = ?")) {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {

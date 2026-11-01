@@ -67,7 +67,14 @@ final class ResultView {
             hint.setStyle("-fx-text-fill: " + WRONG_COLOR + ";");
             items.getChildren().add(hint);
         }
+        Long previousGroup = null;
         for (ResultItem item : result.questions()) {
+            QuestionData q = item.question();
+            // 同一題組連續的題目只在第一題顯示文章
+            if (q.passage() != null && !q.groupId().equals(previousGroup)) {
+                items.getChildren().add(PassageView.create(q.passage(), 13, false));
+            }
+            previousGroup = q.groupId();
             items.getChildren().add(itemBox(item));
         }
         ScrollPane scroll = new ScrollPane(items);

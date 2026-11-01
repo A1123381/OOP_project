@@ -58,11 +58,18 @@ public final class Database {
                 throw new DataAccessException("資料庫連線無效：" + config, null);
             }
             for (String table : new String[] {"users", "subjects", "exams", "questions", "question_options",
-                    "exam_questions", "practice_records", "answer_records", "wrong_questions"}) {
+                    "exam_questions", "practice_records", "answer_records", "wrong_questions", "question_groups"}) {
                 try (var rs = c.getMetaData().getTables(c.getCatalog(), null, table, null)) {
                     if (!rs.next()) {
-                        throw new DataAccessException("找不到 " + table + " 資料表，請先執行 db/schema.sql", null);
+                        throw new DataAccessException("找不到 " + table + " 資料表，請先執行 db/schema.sql"
+                                + "（既有資料庫請執行 db/migrations/ 中尚未執行的檔案）", null);
                     }
+                }
+            }
+            try (var rs = c.getMetaData().getColumns(c.getCatalog(), null, "questions", "group_id")) {
+                if (!rs.next()) {
+                    throw new DataAccessException("questions 資料表缺少 group_id 欄位，請執行 "
+                            + "db/migrations/001_question_groups.sql", null);
                 }
             }
         } catch (SQLException e) {

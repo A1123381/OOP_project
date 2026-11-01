@@ -1,5 +1,6 @@
 package com.exambattle.client.gui;
 
+import com.exambattle.client.gui.model.QuestionGroups;
 import com.exambattle.client.gui.model.QuestionTypes;
 import com.exambattle.common.protocol.MessageType;
 import com.exambattle.common.protocol.bank.CreateSubjectRequest;
@@ -7,6 +8,8 @@ import com.exambattle.common.protocol.bank.ExamDetail;
 import com.exambattle.common.protocol.bank.ExamList;
 import com.exambattle.common.protocol.bank.ExamRef;
 import com.exambattle.common.protocol.bank.ExamSummary;
+import com.exambattle.common.protocol.bank.GroupRequest;
+import com.exambattle.common.protocol.bank.GroupSaved;
 import com.exambattle.common.protocol.bank.ListExamsRequest;
 import com.exambattle.common.protocol.bank.OptionData;
 import com.exambattle.common.protocol.bank.QuestionData;
@@ -25,7 +28,10 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.scene.Parent;
+import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -58,6 +64,8 @@ final class BankPane {
     private final TextArea preview = new TextArea();
     private final Label examTitle = new Label("請從左側選擇一份考卷");
     private final ObjectProperty<ExamDetail> detail = new SimpleObjectProperty<>();
+    /** 目前考卷中的題組（標示依題目位置）。 */
+    private List<QuestionGroups.Group> groups = List.of();
 
     BankPane(GuiSession session) {
         this.session = session;
@@ -208,7 +216,8 @@ final class BankPane {
                 }
                 int index = getIndex() + 1;
                 String firstLine = q.content().lines().findFirst().orElse("");
-                setText(index + ". [" + QuestionTypes.label(q.type()) + "] " + firstLine
+                String group = q.groupId() == null ? "" : "〔" + QuestionGroups.labelOf(groups, q.groupId()) + "〕";
+                setText(index + ". " + group + "[" + QuestionTypes.label(q.type()) + "] " + firstLine
                         + (q.answerSet() ? "" : "　⚠ 答案未設定"));
             }
         });
@@ -219,7 +228,7 @@ final class BankPane {
         preview.setPrefRowCount(8);
 
         Button add = new Button("新增題目");
-        add.setOnAction(e -> QuestionDialog.show(null).ifPresent(q -> {
+        add.setOnAction(e -> QuestionDialog.show(null, groups).ifPresent(q -> {
             long examId = detail.get().exam().id();
             session.call(MessageType.ADD_QUESTION, new QuestionRequest(examId, null, q), QuestionSaved.class,
                     saved -> reloadDetail(saved.question().id()));
@@ -227,7 +236,7 @@ final class BankPane {
         Button edit = new Button("編輯");
         edit.setOnAction(e -> {
             QuestionData selected = questions.getSelectionModel().getSelectedItem();
-            QuestionDialog.show(selected).ifPresent(q -> {
+            QuestionDialog.show(selected, groups).ifPresent(q -> {
                 long examId = detail.get().exam().id();
                 session.call(MessageType.UPDATE_QUESTION, new QuestionRequest(examId, selected.id(), q),
                         QuestionSaved.class, saved -> reloadDetail(saved.question().id()));
@@ -241,6 +250,8 @@ final class BankPane {
                         QuestionRef.class, deleted -> reloadDetail(null));
             }
         });
+        Button editPassage = new Button("編輯題組文章");
+        editPassage.setOnAction(e -> editPassage(questions.getSelectionModel().getSelectedItem()));
         Button up = new Button("上移");
         up.setOnAction(e -> move(-1));
         Button down = new Button("下移");
@@ -253,6 +264,10 @@ final class BankPane {
         for (Button b : List.of(edit, delete, up, down)) {
             b.disableProperty().bind(notOwner.or(noQuestion));
         }
+        editPassage.disableProperty().bind(notOwner.or(Bindings.createBooleanBinding(() -> {
+            QuestionData q = questions.getSelectionModel().getSelectedItem();
+            return q == null || q.groupId() == null;
+        }, questions.getSelectionModel().selectedItemProperty())));
 
         Label readOnly = new Label("你不是建立者：只能瀏覽，看不到正確答案。");
         readOnly.setStyle("-fx-text-fill: #555;");
@@ -261,11 +276,13 @@ final class BankPane {
 
         detail.addListener((obs, before, after) -> {
             examTitle.setText(after == null ? "請從左側選擇一份考卷" : describe(after.exam()));
+            groups = after == null ? List.of() : QuestionGroups.of(after.questions());
             questions.getItems().setAll(after == null ? List.of() : after.questions());
         });
 
         VBox.setVgrow(questions, Priority.ALWAYS);
-        VBox box = new VBox(8, examTitle, readOnly, questions, new FlowPane(8, 8, add, edit, delete, up, down),
+        VBox box = new VBox(8, examTitle, readOnly, questions,
+                new FlowPane(8, 8, add, edit, delete, up, down, editPassage),
                 new Label("題目內容"), preview);
         box.setPadding(new Insets(12));
         return box;
@@ -304,6 +321,32 @@ final class BankPane {
         });
     }
 
+    /** 修改題組文章；同組的題目一起改變（UPDATE_GROUP）。 */
+    private void editPassage(QuestionData q) {
+        if (q == null || q.groupId() == null) {
+            return;
+        }
+        TextArea text = new TextArea(q.passage());
+        text.setWrapText(true);
+        text.setPrefRowCount(16);
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("編輯題組文章");
+        dialog.setHeaderText(QuestionGroups.labelOf(groups, q.groupId()) + "：修改後同組的題目一起改變（克漏字的空格可寫成【11】）");
+        dialog.setResizable(true);
+        dialog.getDialogPane().setContent(text);
+        dialog.getDialogPane().setPrefWidth(640);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, e ->
+                QuestionDialog.passageError(text.getText()).ifPresent(error -> {
+                    Dialogs.error(error);
+                    e.consume();
+                }));
+        dialog.setResultConverter(b -> b == ButtonType.OK ? text.getText() : null);
+        dialog.showAndWait().ifPresent(passage ->
+                session.call(MessageType.UPDATE_GROUP, new GroupRequest(detail.get().exam().id(), q.groupId(), passage),
+                        GroupSaved.class, saved -> reloadDetail(q.id())));
+    }
+
     private void move(int delta) {
         int index = questions.getSelectionModel().getSelectedIndex();
         int target = index + delta;
@@ -335,7 +378,12 @@ final class BankPane {
             return;
         }
         boolean owner = detail.get() != null && isMine(detail.get().exam());
-        StringBuilder text = new StringBuilder("[" + QuestionTypes.label(q.type()) + "題] ").append(q.content()).append("\n\n");
+        StringBuilder text = new StringBuilder();
+        if (q.passage() != null) {
+            text.append("【").append(QuestionGroups.labelOf(groups, q.groupId())).append(" 文章】\n").append(q.passage())
+                    .append("\n\n");
+        }
+        text.append("[" + QuestionTypes.label(q.type()) + "題] ").append(q.content()).append("\n\n");
         if (q.type() == QuestionType.TRUE_FALSE) {
             if (owner) {
                 text.append("答案：").append(q.trueFalseAnswer() == null ? "未設定" : q.trueFalseAnswer() ? "對" : "錯");

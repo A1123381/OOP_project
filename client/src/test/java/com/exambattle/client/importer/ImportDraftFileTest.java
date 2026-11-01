@@ -28,7 +28,7 @@ class ImportDraftFileTest {
     private static final List<PageText> PAGES = List.of(new PageText(1, ExtractionMethod.OCR, "1. 題目\n(A) 甲 (B) 乙"));
 
     @Test
-    void v2RoundTripKeepsCorrectionsAndSelection() throws Exception {
+    void roundTripKeepsCorrectionsAndSelection() throws Exception {
         ImportItem item = ImportItem.from(new DraftQuestion(1, "題目", List.of("甲", "乙"),
                 QuestionType.SINGLE_CHOICE, 1, List.of("題目內容過短，可能辨識不完整")));
         AnswerKeyApplier.apply(List.of(item), Map.of(1, new AnswerKey("B")));
@@ -41,7 +41,7 @@ class ImportDraftFileTest {
         List<ImportItem> items = ImportDraftFile.items(loaded);
 
         assertEquals(PAGES, loaded.pages());
-        assertEquals(2, loaded.version());
+        assertEquals(ImportDraftFile.VERSION, loaded.version());
         assertEquals(item.toData(), items.get(0).toData());
         assertEquals(ImportItem.Status.READY, items.get(0).status());
         assertEquals(ImportItem.Status.IMPORTED, items.get(1).status());
@@ -73,7 +73,7 @@ class ImportDraftFileTest {
         String json = Files.readString(file);
         assertEquals("期中考.pdf", ImportDraftFile.load(file).fileName());
         assertFalse(json.contains("private"), "草稿不可包含原始檔案的路徑：" + json);
-        assertFalse(json.contains("questions"), "v2 只存 items");
+        assertFalse(json.contains("questions"), "v2 起只存 items");
         assertTrue(json.length() < 2_000, "不含圖片等大型資料");
     }
 

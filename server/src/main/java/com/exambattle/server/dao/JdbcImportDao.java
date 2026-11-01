@@ -7,6 +7,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.List;
 
 /** 以 MariaDB 實作的 {@link ImportDao}；沿用 JdbcQuestionDao 寫入題目的方法。 */
@@ -19,7 +20,8 @@ public final class JdbcImportDao implements ImportDao {
     }
 
     @Override
-    public long importQuestions(Long examId, NewExam newExam, List<NewQuestion> questions) {
+    public long importQuestions(Long examId, NewExam newExam, List<NewQuestion> questions, List<String> groups,
+                                List<Integer> groupIndexes) {
         return database.inTransaction("匯入題目", c -> {
             long target;
             if (newExam != null) {
@@ -44,11 +46,18 @@ public final class JdbcImportDao implements ImportDao {
             } else {
                 target = examId;
             }
+            List<Long> groupIds = new ArrayList<>();
+            for (String passage : groups) {
+                groupIds.add(JdbcQuestionDao.insertGroup(c, passage, questions.get(0).ownerId()));
+            }
             int position = JdbcQuestionDao.nextPosition(c, target);
-            for (NewQuestion q : questions) {
-                long id = JdbcQuestionDao.insertQuestion(c, q);
+            for (int i = 0; i < questions.size(); i++) {
+                Integer index = groupIndexes.get(i);
+                long id = JdbcQuestionDao.insertQuestion(c, questions.get(i), index == null ? null : groupIds.get(index));
                 JdbcQuestionDao.linkToExam(c, target, id, position++);
             }
+            // 沒有被任何題目使用的題組（呼叫端應已排除）不留下
+            JdbcQuestionDao.deleteEmptyGroups(c, groupIds);
             return target;
         });
     }

@@ -1,6 +1,8 @@
-# Exam Battle 通訊協定（v0.6）
+# Exam Battle 通訊協定（v0.7）
 
-狀態：**第七階段實作版**（第四階段多人競賽延後，見 DECISIONS.md D-022；第六階段沒有協定變動）。擁有者：architect。變更須同步記錄於 DECISIONS.md。
+狀態：**題組支援版**（第四階段多人競賽延後，見 DECISIONS.md D-022；第六階段沒有協定變動）。擁有者：architect。變更須同步記錄於 DECISIONS.md。
+
+v0.7 相對 v0.6：新增題組（D-034）。`QuestionData` 與 `PracticeQuestion` 加上 `groupId`、`passage`；新增 `UPDATE_GROUP`／`GROUP_SAVED`（第 3.5 節）與錯誤碼 `GROUP_NOT_FOUND`；`IMPORT_QUESTIONS` 加上 `groups`、`groupIndexes`。新欄位都可以省略，舊的請求格式仍然有效。
 
 v0.6 相對 v0.5：新增 `IMPORT_QUESTIONS`／`IMPORT_DONE`（第 3.7 節）與錯誤碼 `TOO_MANY_QUESTIONS`；單行上限由 65,536 調高為 1,048,576 字元。
 
@@ -189,12 +191,24 @@ ExamSummary  {"id":7,"title":"113 學年度期中考","subject":{"id":1,"name":"
               "owner":{"userId":12,"username":"teacher","displayName":"王老師"},"questionCount":4,"unansweredCount":1}
 QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation":"基本加法",
               "options":[{"id":90,"content":"1","correct":false},{"id":91,"content":"2","correct":true}],
-              "trueFalseAnswer":null,"answerSet":true}
+              "trueFalseAnswer":null,"answerSet":true,"groupId":null,"passage":null}
 ```
 
 - `year`、`examType`、`explanation` 可為 `null`。
 - **答案只給建立者**：其他人收到的 `options[].correct` 與 `trueFalseAnswer` 一律為 `null`；`answerSet`（是否已設定答案）所有人都看得到。
 - 送出題目時 `id`、`answerSet` 會被忽略；選項的 `correct` 為 `null` 視為 `false`。
+
+#### 題組（v0.7）
+
+閱讀測驗、克漏字等多題共用一篇文章（D-034）。文章只存一份，所有人都看得到（文章不是答案）。
+
+- 回應中：`groupId` 是所屬題組，`passage` 是題組文章；不屬於題組時兩者都是 `null`。
+- `ADD_QUESTION`／`UPDATE_QUESTION` 的 `question`：
+  - 帶 `groupId`：加入同一份考卷中既有的題組（`passage` 會被忽略）；不屬於這份考卷時回 `GROUP_NOT_FOUND`。
+  - 只帶 `passage`：建立新題組。
+  - 兩者都是 `null`：不屬於題組。`UPDATE_QUESTION` 可以用這個方式把題目移出題組。
+- 文章 1–20,000 字元；克漏字的空格慣例寫成 `【11】`（客戶端以粗體顯示）。
+- 題組不再有任何題目時自動刪除。
 
 #### 答案規則
 
@@ -214,10 +228,11 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 | `CREATE_EXAM` | `{title, subjectId, year?, examType?}` | `EXAM_SAVED` = ExamSummary | `SUBJECT_NOT_FOUND` |
 | `UPDATE_EXAM` | `{examId, title, subjectId, year?, examType?}` | `EXAM_SAVED` | `EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
 | `DELETE_EXAM` | `{examId}` | `EXAM_DELETED {examId}` | `EXAM_NOT_FOUND`、`NOT_OWNER` |
-| `ADD_QUESTION` | `{examId, question:QuestionData}` | `QUESTION_SAVED {examId, question}`（加在最後） | `EXAM_NOT_FOUND`、`NOT_OWNER` |
+| `ADD_QUESTION` | `{examId, question:QuestionData}` | `QUESTION_SAVED {examId, question}`（加在最後） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND` |
 | `UPDATE_QUESTION` | `{examId, questionId, question}` | `QUESTION_SAVED`（選項整組取代，選項 id 會改變） | 同上 + `QUESTION_NOT_FOUND` |
 | `DELETE_QUESTION` | `{examId, questionId}` | `QUESTION_DELETED {examId, questionId}` | 同上 |
 | `REORDER_QUESTIONS` | `{examId, questionIds:[…]}` | `EXAM_DETAIL` | 同上；清單必須恰好是考卷目前的全部題目，否則 `INVALID_PAYLOAD` |
+| `UPDATE_GROUP`（v0.7） | `{examId, groupId, passage}` | `GROUP_SAVED {examId, groupId, passage}`（同組題目一起改變） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND` |
 
 欄位格式錯誤一律回 `INVALID_PAYLOAD`。刪除考卷時，只屬於這份考卷的題目會一併刪除。
 搜尋功能屬於第八階段，本版只提供依分類篩選。
@@ -272,7 +287,8 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 
 ```json
 PRACTICE_STARTED {"practiceId":"…","mode":"FULL_EXAM","revealMode":"AFTER_SUBMIT","title":"期中考","startedAt":"2026-11-01T04:00:00.000Z",
-                  "questions":[{"index":0,"questionId":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","options":[{"id":90,"content":"1"},{"id":91,"content":"2"}]}]}
+                  "questions":[{"index":0,"questionId":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","options":[{"id":90,"content":"1"},{"id":91,"content":"2"}],
+                                "groupId":null,"passage":null}]}
 ANSWER_RESULT    {"index":0,"correct":true,"score":1.0,"correctOptionIds":[91],"correctTrueFalse":null,"explanation":"基本加法"}
 RecordSummary    {"id":5,"mode":"FULL_EXAM","revealMode":"AFTER_SUBMIT","title":"期中考","startedAt":"…","finishedAt":"…",
                   "durationMs":185000,"questionCount":3,"correctCount":1,"score":53.3}
@@ -287,18 +303,21 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 - `answeredAt` 只在練習模式記錄。
 - 紀錄中的題目是作答當時的**快照**：題目之後被修改或刪除，紀錄仍保持原樣。
 - 題目被刪除時會從錯題本消失。錯題本顯示正確答案，因為使用者交卷後已經看過。
+- 題組的題目（v0.7）：`PRACTICE_STARTED` 的題目、快照與 `WrongItem.question` 都帶 `groupId` 與 `passage`。隨機抽題只抽到題組中的部分題目時，照常顯示文章。
 
 ### 3.7 整批匯入題目（v0.6，第七階段）
 
 | 請求 | payload | 成功回應 | 可能的錯誤 |
 |---|---|---|---|
-| `IMPORT_QUESTIONS` | `{examId?, newExam?: {title, subjectId, year?, examType?}, questions: [QuestionData]}` | `IMPORT_DONE {exam: ExamSummary, importedCount}` | `INVALID_PAYLOAD`、`TOO_MANY_QUESTIONS`、`EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
+| `IMPORT_QUESTIONS` | `{examId?, newExam?: {title, subjectId, year?, examType?}, questions: [QuestionData], groups?: [passage], groupIndexes?: [int?]}` | `IMPORT_DONE {exam: ExamSummary, importedCount}` | `INVALID_PAYLOAD`、`TOO_MANY_QUESTIONS`、`EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
 
 - `examId`（加到自己的考卷最後）與 `newExam`（建立新考卷）必須**二選一**。
 - 每題的規則與 `ADD_QUESTION` 相同（3.5 節的答案規則），答案可以未設定。
 - **全部驗證通過才寫入**，並在同一個交易內完成（含建立新考卷）；任何一題無效就整批拒絕，錯誤訊息以「第 N 題：…」開頭。
 - 一次最多 200 題（`TOO_MANY_QUESTIONS`）。
 - 題目內容來自客戶端本機的 OCR 校正；原始檔案不會傳送（D-027）。
+- 題組（v0.7）：`groups` 是要建立的題組文章；`groupIndexes` 與 `questions` 一一對應，第 i 題屬於 `groups[groupIndexes[i]]`，`null` 表示不屬於題組。
+  `questions` 內的 `groupId`、`passage` 會被忽略。每個題組至少要有一題；位置超出範圍、數量不一致或文章不合規則時回 `INVALID_PAYLOAD`（「第 N 個題組：…」）。
 
 ## 4. 錯誤碼
 
@@ -323,6 +342,7 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 | `SUBJECT_EXISTS` | 分類名稱已存在 | 否 |
 | `EXAM_NOT_FOUND` | 考卷不存在 | 否 |
 | `QUESTION_NOT_FOUND` | 題目不存在或不屬於該考卷 | 否 |
+| `GROUP_NOT_FOUND` | 題組不存在，或這份考卷中沒有題目屬於這個題組（v0.7） | 否 |
 | `NOT_OWNER` | 不是考卷建立者，不能修改 | 否 |
 | `TOO_MANY_QUESTIONS` | 一次匯入超過 200 題 | 否 |
 | `NO_QUESTIONS` | 沒有可以練習的題目（需已設定答案） | 否 |

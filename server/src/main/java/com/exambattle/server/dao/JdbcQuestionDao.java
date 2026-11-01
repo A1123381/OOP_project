@@ -24,7 +24,7 @@ import java.util.Optional;
 public final class JdbcQuestionDao implements QuestionDao {
 
     private static final String QUESTION_COLUMNS =
-            "q.id, q.type, q.content, q.explanation, q.true_false_answer, q.created_by";
+            "q.id, q.type, q.content, q.explanation, q.true_false_answer, q.created_by, q.group_id, g.passage";
 
     private final Database database;
 
@@ -35,20 +35,21 @@ public final class JdbcQuestionDao implements QuestionDao {
     @Override
     public QuestionRecord createInExam(long examId, NewQuestion question) {
         return database.inTransaction("新增題目", c -> {
-            long id = insertQuestion(c, question);
+            long id = insertQuestion(c, question, resolveGroup(c, question));
             linkToExam(c, examId, id, nextPosition(c, examId));
             return load(c, List.of(id)).get(0);
         });
     }
 
-    /** 寫入題目與選項，回傳題目 id。呼叫端負責交易。 */
-    static long insertQuestion(Connection c, NewQuestion question) throws SQLException {
+    /** 寫入題目與選項，回傳題目 id。groupId 為 null 表示不屬於題組。呼叫端負責交易。 */
+    static long insertQuestion(Connection c, NewQuestion question, Long groupId) throws SQLException {
         long id;
         try (PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO questions (type, content, explanation, true_false_answer, created_by)
-                VALUES (?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                INSERT INTO questions (type, content, explanation, true_false_answer, group_id, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
             bindQuestion(ps, question);
-            ps.setLong(5, question.ownerId());
+            bindGroup(ps, 5, groupId);
+            ps.setLong(6, question.ownerId());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -84,13 +85,16 @@ public final class JdbcQuestionDao implements QuestionDao {
     @Override
     public QuestionRecord update(long questionId, NewQuestion question) {
         return database.inTransaction("更新題目", c -> {
+            List<Long> previousGroup = groupIdsOf(c, List.of(questionId));
             try (PreparedStatement ps = c.prepareStatement("""
-                    UPDATE questions SET type = ?, content = ?, explanation = ?, true_false_answer = ?
+                    UPDATE questions SET type = ?, content = ?, explanation = ?, true_false_answer = ?, group_id = ?
                     WHERE id = ?""")) {
                 bindQuestion(ps, question);
-                ps.setLong(5, questionId);
+                bindGroup(ps, 5, resolveGroup(c, question));
+                ps.setLong(6, questionId);
                 ps.executeUpdate();
             }
+            deleteEmptyGroups(c, previousGroup);
             try (PreparedStatement ps = c.prepareStatement("DELETE FROM question_options WHERE question_id = ?")) {
                 ps.setLong(1, questionId);
                 ps.executeUpdate();
@@ -181,7 +185,9 @@ public final class JdbcQuestionDao implements QuestionDao {
                 ps.setLong(2, questionId);
                 ps.executeUpdate();
             }
+            List<Long> groupIds = groupIdsOf(c, List.of(questionId));
             JdbcExamDao.deleteOrphans(c, List.of(questionId));
+            deleteEmptyGroups(c, groupIds);
             return null;
         });
     }
@@ -201,6 +207,96 @@ public final class JdbcQuestionDao implements QuestionDao {
             }
             return null;
         });
+    }
+
+    @Override
+    public boolean isGroupInExam(long examId, long groupId) {
+        return database.run("查詢題組", c -> {
+            try (PreparedStatement ps = c.prepareStatement("""
+                    SELECT 1 FROM exam_questions eq JOIN questions q ON q.id = eq.question_id
+                    WHERE eq.exam_id = ? AND q.group_id = ? LIMIT 1""")) {
+                ps.setLong(1, examId);
+                ps.setLong(2, groupId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        });
+    }
+
+    @Override
+    public void updatePassage(long groupId, String passage) {
+        database.run("修改題組文章", c -> {
+            try (PreparedStatement ps = c.prepareStatement("UPDATE question_groups SET passage = ? WHERE id = ?")) {
+                ps.setString(1, passage);
+                ps.setLong(2, groupId);
+                ps.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /** 新增題組，回傳 id。呼叫端負責交易。 */
+    static long insertGroup(Connection c, String passage, long ownerId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO question_groups (passage, created_by) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, passage);
+            ps.setLong(2, ownerId);
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                keys.next();
+                return keys.getLong(1);
+            }
+        }
+    }
+
+    /** 依 NewQuestion 的題組欄位決定 group_id：加入既有題組、建立新題組，或 null。 */
+    private static Long resolveGroup(Connection c, NewQuestion question) throws SQLException {
+        if (question.groupId() != null) {
+            return question.groupId();
+        }
+        return question.newPassage() == null ? null : insertGroup(c, question.newPassage(), question.ownerId());
+    }
+
+    /** 這些題目所屬的題組 id（不重複）。 */
+    static List<Long> groupIdsOf(Connection c, List<Long> questionIds) throws SQLException {
+        if (questionIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", Collections.nCopies(questionIds.size(), "?"));
+        try (PreparedStatement ps = c.prepareStatement("SELECT DISTINCT group_id FROM questions WHERE id IN ("
+                + placeholders + ") AND group_id IS NOT NULL")) {
+            bindIds(ps, questionIds);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Long> ids = new ArrayList<>();
+                while (rs.next()) {
+                    ids.add(rs.getLong(1));
+                }
+                return ids;
+            }
+        }
+    }
+
+    /** 刪除已經沒有任何題目的題組。 */
+    static void deleteEmptyGroups(Connection c, List<Long> groupIds) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("""
+                DELETE FROM question_groups WHERE id = ?
+                AND NOT EXISTS (SELECT 1 FROM questions WHERE group_id = ?)""")) {
+            for (long id : groupIds) {
+                ps.setLong(1, id);
+                ps.setLong(2, id);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private static void bindGroup(PreparedStatement ps, int index, Long groupId) throws SQLException {
+        if (groupId == null) {
+            ps.setNull(index, Types.BIGINT);
+        } else {
+            ps.setLong(index, groupId);
+        }
     }
 
     private static List<Long> questionIds(Connection c, long examId) throws SQLException {
@@ -238,16 +334,20 @@ public final class JdbcQuestionDao implements QuestionDao {
 
         Map<Long, QuestionRecord> byId = new LinkedHashMap<>();
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT " + QUESTION_COLUMNS + " FROM questions q WHERE q.id IN (" + placeholders + ")")) {
+                "SELECT " + QUESTION_COLUMNS + " FROM questions q LEFT JOIN question_groups g ON g.id = q.group_id"
+                        + " WHERE q.id IN (" + placeholders + ")")) {
             bindIds(ps, ids);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     long id = rs.getLong("id");
                     boolean tf = rs.getBoolean("true_false_answer");
                     Boolean trueFalse = rs.wasNull() ? null : tf;
+                    long group = rs.getLong("group_id");
+                    Long groupId = rs.wasNull() ? null : group;
                     byId.put(id, new QuestionRecord(id, QuestionType.valueOf(rs.getString("type")),
                             rs.getString("content"), rs.getString("explanation"), trueFalse,
-                            rs.getLong("created_by"), List.copyOf(options.getOrDefault(id, List.of()))));
+                            rs.getLong("created_by"), List.copyOf(options.getOrDefault(id, List.of())),
+                            groupId, rs.getString("passage")));
                 }
             }
         }

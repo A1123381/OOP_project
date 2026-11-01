@@ -135,7 +135,11 @@ final class WrongBookPane {
             return;
         }
         QuestionData q = item.question();
-        StringBuilder text = new StringBuilder("［" + QuestionTypes.label(q.type()) + "題］").append(q.content()).append("\n\n");
+        StringBuilder text = new StringBuilder();
+        if (q.passage() != null) {
+            text.append("【題組文章】\n").append(q.passage()).append("\n\n");
+        }
+        text.append("［" + QuestionTypes.label(q.type()) + "題］").append(q.content()).append("\n\n");
         if (q.type() != QuestionType.TRUE_FALSE) {
             for (int i = 0; i < q.options().size(); i++) {
                 boolean correct = Boolean.TRUE.equals(q.options().get(i).correct());

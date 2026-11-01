@@ -36,6 +36,8 @@ public final class Protocol {
     public static final int MAX_OPTION_CHARS = 1_000;
     public static final int MIN_OPTIONS = 2;
     public static final int MAX_OPTIONS = 10;
+    /** 題組文章（閱讀測驗、克漏字），與 question_groups.passage 一致。 */
+    public static final int MAX_PASSAGE_CHARS = 20_000;
 
     /** 單人練習的題數。 */
     public static final int DEFAULT_PRACTICE_COUNT = 10;

@@ -16,7 +16,7 @@ class QuestionSplitterTest {
         for (int i = 0; i < pages.length; i++) {
             list.add(new PageText(i + 1, ExtractionMethod.TEXT_LAYER, pages[i]));
         }
-        return QuestionSplitter.split(list);
+        return QuestionSplitter.split(list).questions();
     }
 
     @Test

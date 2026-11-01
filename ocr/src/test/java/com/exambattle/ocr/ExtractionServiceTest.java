@@ -70,7 +70,7 @@ class ExtractionServiceTest {
         assertTrue(result.pages().get(0).text().contains("Which number is prime?"));
         assertFalse(result.cancelled());
 
-        List<DraftQuestion> drafts = QuestionSplitter.split(result.pages());
+        List<DraftQuestion> drafts = QuestionSplitter.split(result.pages()).questions();
         assertEquals(List.of("Paris", "Rome"), drafts.get(1).options());
     }
 

@@ -11,7 +11,14 @@ import java.util.List;
  * @param guessedType 推測的題型：有 2 個以上選項時為單選；沒有選項時為 null（由使用者決定）
  * @param sourcePage  題目開始的頁碼（從 1 開始）
  * @param warnings    需要人工確認的地方
+ * @param groupIndex  所屬題組在 {@link SplitResult#groups()} 中的位置；不屬於題組時為 null
+ * @param unsupported 非選擇題（填充、簡答、作文等），系統不支援，預設不匯入
  */
 public record DraftQuestion(Integer number, String content, List<String> options, QuestionType guessedType,
-                            int sourcePage, List<String> warnings) {
+                            int sourcePage, List<String> warnings, Integer groupIndex, boolean unsupported) {
+
+    public DraftQuestion(Integer number, String content, List<String> options, QuestionType guessedType,
+                         int sourcePage, List<String> warnings) {
+        this(number, content, options, guessedType, sourcePage, warnings, null, false);
+    }
 }

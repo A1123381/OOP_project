@@ -28,6 +28,7 @@ public enum ErrorCode {
     SUBJECT_EXISTS,
     EXAM_NOT_FOUND,
     QUESTION_NOT_FOUND,
+    GROUP_NOT_FOUND,
     NOT_OWNER,
     TOO_MANY_QUESTIONS,
 

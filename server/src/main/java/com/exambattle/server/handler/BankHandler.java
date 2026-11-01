@@ -7,6 +7,7 @@ import com.exambattle.common.protocol.bank.CreateSubjectRequest;
 import com.exambattle.common.protocol.bank.ExamList;
 import com.exambattle.common.protocol.bank.ExamRef;
 import com.exambattle.common.protocol.bank.ExamRequest;
+import com.exambattle.common.protocol.bank.GroupRequest;
 import com.exambattle.common.protocol.bank.ImportRequest;
 import com.exambattle.common.protocol.bank.ListExamsRequest;
 import com.exambattle.common.protocol.bank.QuestionRef;
@@ -35,7 +36,7 @@ public final class BankHandler {
             MessageType.LIST_EXAMS, MessageType.GET_EXAM,
             MessageType.CREATE_EXAM, MessageType.UPDATE_EXAM, MessageType.DELETE_EXAM,
             MessageType.ADD_QUESTION, MessageType.UPDATE_QUESTION, MessageType.DELETE_QUESTION,
-            MessageType.REORDER_QUESTIONS, MessageType.IMPORT_QUESTIONS);
+            MessageType.REORDER_QUESTIONS, MessageType.IMPORT_QUESTIONS, MessageType.UPDATE_GROUP);
 
     private final SubjectService subjects;
     private final ExamService exams;
@@ -94,6 +95,8 @@ public final class BankHandler {
                 }
                 case IMPORT_QUESTIONS -> Message.of(MessageType.IMPORT_DONE, requestId,
                         exams.importQuestions(message.payloadAs(ImportRequest.class), user));
+                case UPDATE_GROUP -> Message.of(MessageType.GROUP_SAVED, requestId,
+                        exams.updateGroup(message.payloadAs(GroupRequest.class), user));
                 default -> throw new IllegalArgumentException("不是題庫訊息: " + type);
             };
             session.send(reply);

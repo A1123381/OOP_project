@@ -179,7 +179,7 @@ final class ClientHandler implements Runnable, Session {
                     context.chat().handle(this, message);
                 }
                 case LIST_SUBJECTS, CREATE_SUBJECT, LIST_EXAMS, GET_EXAM, CREATE_EXAM, UPDATE_EXAM, DELETE_EXAM,
-                     ADD_QUESTION, UPDATE_QUESTION, DELETE_QUESTION, REORDER_QUESTIONS, IMPORT_QUESTIONS -> {
+                     ADD_QUESTION, UPDATE_QUESTION, DELETE_QUESTION, REORDER_QUESTIONS, IMPORT_QUESTIONS, UPDATE_GROUP -> {
                     requireLoggedIn(message);
                     context.bank().handle(this, type.get(), message);
                 }

@@ -30,9 +30,19 @@ public final class BankRecords {
     public record OptionRecord(long id, String content, boolean correct) {
     }
 
-    /** questions 的一列與其選項。trueFalseAnswer 為 null 表示是非題答案未設定。 */
+    /**
+     * questions 的一列與其選項。trueFalseAnswer 為 null 表示是非題答案未設定。
+     * groupId、passage 是所屬題組與其文章（D-034）；不屬於題組時為 null。
+     */
     public record QuestionRecord(long id, QuestionType type, String content, String explanation,
-                                 Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options) {
+                                 Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options,
+                                 Long groupId, String passage) {
+
+        /** 不屬於題組的題目。 */
+        public QuestionRecord(long id, QuestionType type, String content, String explanation,
+                              Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options) {
+            this(id, type, content, explanation, trueFalseAnswer, ownerId, options, null, null);
+        }
 
         /** 是否已設定正確答案。 */
         public boolean answerSet() {
@@ -46,8 +56,22 @@ public final class BankRecords {
     public record NewOption(String content, boolean correct) {
     }
 
-    /** 新增或更新題目用的內容（選項會整組取代）。 */
+    /**
+     * 新增或更新題目用的內容（選項會整組取代）。
+     * 題組：groupId 不為 null 表示加入既有題組；否則 newPassage 不為 null 表示建立新題組；兩者都是 null 表示不屬於題組。
+     */
     public record NewQuestion(QuestionType type, String content, String explanation, Boolean trueFalseAnswer,
-                              long ownerId, List<NewOption> options) {
+                              long ownerId, List<NewOption> options, Long groupId, String newPassage) {
+
+        /** 不屬於題組的題目。 */
+        public NewQuestion(QuestionType type, String content, String explanation, Boolean trueFalseAnswer,
+                           long ownerId, List<NewOption> options) {
+            this(type, content, explanation, trueFalseAnswer, ownerId, options, null, null);
+        }
+
+        /** 換成另一個題組。 */
+        public NewQuestion withGroup(Long groupId, String newPassage) {
+            return new NewQuestion(type, content, explanation, trueFalseAnswer, ownerId, options, groupId, newPassage);
+        }
     }
 }

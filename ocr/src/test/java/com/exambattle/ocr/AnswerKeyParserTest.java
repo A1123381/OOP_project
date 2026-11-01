@@ -75,6 +75,30 @@ class AnswerKeyParserTest {
     }
 
     @Test
+    void threeColumnTableWithNonChoiceAndFootnote() {
+        // 仿照大考參考答案的版面（自製內容）
+        AnswerKeyParser.Result r = AnswerKeyParser.parse("""
+                選擇題參考答案
+                題號 答案 題號 答案 題號 答案
+                1 B 3 E 5 ／
+                2 C 4 AD 6 ／
+                ※1. 對公布之答案有意見者，請於期限內反映。
+                2. 答案「／」者，表示該題為非選擇題
+                """);
+
+        assertEquals(Map.of(1, "B", 2, "C", 3, "E", 4, "AD"), tokens(r), "附註的「1. 對」不會蓋掉第 1 題");
+        assertEquals(Set.of(5, 6), r.nonChoice());
+        assertTrue(r.warnings().isEmpty(), r.warnings().toString());
+    }
+
+    @Test
+    void trueFalseWordMustStandAlone() {
+        AnswerKeyParser.Result r = AnswerKeyParser.parse("1. 對\n2.錯\n3. 對於這題");
+
+        assertEquals(Map.of(1, "對", 2, "錯"), tokens(r));
+    }
+
+    @Test
     void tokenInterpretation() {
         assertEquals(Optional.of(Set.of('A', 'C')), new AnswerKey("AC").letters());
         assertEquals(Optional.empty(), new AnswerKey("○").letters());

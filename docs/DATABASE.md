@@ -4,12 +4,13 @@
 
 本專案使用 **MariaDB**（本機為 MariaDB 13.0，服務名稱 `MariaDB`，埠號 3306），驅動為 MariaDB Connector/J。
 `db/schema.sql` 只使用 MariaDB 與 MySQL 8 共通的語法，見 DECISIONS.md D-016。
+`db/migrations/` 中的升級檔使用 MariaDB 的 `IF NOT EXISTS` 語法，可以重複執行。
 
 以下指令在 PowerShell 中、於專案根目錄執行。
 
-> **本機狀態（2026-11-01，第五階段）：** 第 1–4 步已完成。`exam_battle`、`exam_battle_test` 資料庫、`exam_battle` 帳號、
-> 全部資料表（users、subjects、exams、questions、question_options、exam_questions、practice_records、answer_records、wrong_questions）
-> 與初始大分類都已建立，
+> **本機狀態（2026-11-02，題組支援）：** 第 1–4 步已完成。`exam_battle`、`exam_battle_test` 資料庫、`exam_battle` 帳號、
+> 全部資料表（users、subjects、exams、questions、question_options、exam_questions、practice_records、answer_records、wrong_questions、
+> question_groups）與初始大分類都已建立；兩個資料庫都已執行 `db/migrations/001_question_groups.sql`。
 > `config/db.properties` 已產生（帳號密碼為隨機產生，只存在該檔案中）。換電腦或重建資料庫時再照以下步驟做。
 
 ## 1. 確認 MariaDB 服務
@@ -65,7 +66,22 @@ Get-Content db\schema.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0
 Get-Content db\seed_subjects.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle
 ```
 
-`schema.sql` 與 `seed_subjects.sql` 都可重複執行，不會刪除既有資料；之後的階段新增資料表時，重新執行 `schema.sql` 即可。
+`schema.sql` 與 `seed_subjects.sql` 都可重複執行，不會刪除既有資料。新安裝只需要執行 `schema.sql`，它已包含最新的資料表與欄位。
+
+### 升級既有資料庫
+
+`schema.sql` 只會建立不存在的資料表，**不會替既有的資料表加上新欄位**。從舊版升級時，請依序執行 `db/migrations/` 中尚未執行的檔案：
+
+| 檔案 | 內容 | 需要執行的情況 |
+|---|---|---|
+| `001_question_groups.sql` | 新增 `question_groups` 資料表、`questions.group_id` 欄位（題組，D-034） | 資料庫在題組支援之前建立 |
+
+```powershell
+Get-Content db\migrations\001_question_groups.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle
+Get-Content db\migrations\001_question_groups.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle_test
+```
+
+升級檔可以重複執行。伺服器啟動時會檢查，缺少時顯示要執行哪個檔案。
 匯入中文資料時務必加上 `--default-character-set=utf8mb4`（以及 PowerShell 的 `-Encoding UTF8`），否則中文可能變成亂碼。
 
 ## 4. 設定伺服器連線
@@ -107,5 +123,6 @@ mvn -pl server -am test
 |---|---|
 | `Could not connect to address=(host=localhost)(port=3306)` | MariaDB 服務未啟動，或埠號不是 3306 |
 | `Access denied for user 'exam_battle'@'localhost'` | 密碼錯誤，或第 2 步的帳號未建立 |
-| `找不到 xxx 資料表` | 尚未執行第 3 步，或升級後未重新執行 `schema.sql` |
+| `找不到 xxx 資料表` | 尚未執行第 3 步，或升級後未執行 `db/migrations/` 中的檔案 |
+| `questions 資料表缺少 group_id 欄位` | 舊版資料庫，請執行 `db/migrations/001_question_groups.sql`（第 3 節「升級既有資料庫」） |
 | `Unknown collation: 'utf8mb4_0900_ai_ci'` | 使用了舊版 schema；請改用目前的 `db/schema.sql` |

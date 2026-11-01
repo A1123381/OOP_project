@@ -61,6 +61,7 @@ class JdbcBankDaoTest {
             for (String sql : List.of(
                     "DELETE FROM exams WHERE created_by = ?",
                     "DELETE FROM questions WHERE created_by = ?",
+                    "DELETE FROM question_groups WHERE created_by = ?",
                     "DELETE FROM subjects WHERE created_by = ?",
                     "DELETE FROM users WHERE id = ?")) {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -130,6 +131,51 @@ class JdbcBankDaoTest {
         exams.delete(examId);
         assertTrue(exams.findById(examId).isEmpty());
         assertTrue(questions.findById(q2).isEmpty());
+    }
+
+    @Test
+    void groupsShareOnePassageAndDisappearWhenEmpty() throws Exception {
+        long examId = exams.create(new NewExam("題組", subjectId, null, null, userId)).id();
+        QuestionRecord first = questions.createInExam(examId,
+                choice(QuestionType.SINGLE_CHOICE, "第 1 格", true, false).withGroup(null, "文章【1】【2】"));
+        long groupId = first.groupId();
+        QuestionRecord second = questions.createInExam(examId,
+                choice(QuestionType.SINGLE_CHOICE, "第 2 格", false, true).withGroup(groupId, null));
+        QuestionRecord alone = questions.createInExam(examId, trueFalse("獨立", true));
+
+        assertEquals("文章【1】【2】", first.passage());
+        assertEquals(groupId, second.groupId());
+        assertNull(alone.groupId());
+        assertTrue(questions.isGroupInExam(examId, groupId));
+        assertEquals(1, countGroups(groupId));
+
+        questions.updatePassage(groupId, "改過的文章");
+        assertEquals(List.of("改過的文章", "改過的文章"), questions.findByExam(examId).stream().limit(2)
+                .map(QuestionRecord::passage).toList(), "文章只存一份");
+
+        questions.update(first.id(), choice(QuestionType.SINGLE_CHOICE, "移出題組", true, false));
+        assertNull(questions.findById(first.id()).orElseThrow().groupId());
+        assertEquals(1, countGroups(groupId), "還有第 2 題，題組保留");
+
+        questions.removeFromExam(examId, second.id());
+        assertEquals(0, countGroups(groupId), "題組沒有題目後一併刪除");
+        assertFalse(questions.isGroupInExam(examId, groupId));
+
+        long other = questions.createInExam(examId,
+                choice(QuestionType.SINGLE_CHOICE, "新題組", true, false).withGroup(null, "另一篇")).groupId();
+        exams.delete(examId);
+        assertEquals(0, countGroups(other), "刪除考卷時清除題組");
+    }
+
+    private int countGroups(long groupId) throws Exception {
+        try (Connection c = database.connection();
+             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM question_groups WHERE id = ?")) {
+            ps.setLong(1, groupId);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
     }
 
     private int countOptions(long questionId) throws Exception {

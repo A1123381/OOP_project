@@ -19,7 +19,7 @@ import java.util.Optional;
 
 /**
  * 測試用：以記憶體實作題庫的三個 DAO（共用同一份資料），行為與 Jdbc 實作一致
- * （分類名稱不分大小寫唯一、刪除時清除孤兒題目、更新題目時選項整組取代）。
+ * （分類名稱不分大小寫唯一、刪除時清除孤兒題目與空的題組、更新題目時選項整組取代）。
  * 三個 DAO 介面的方法名稱有重疊，所以以內部類別分別實作；所有操作都以外層物件同步。
  */
 public final class InMemoryBankDao {
@@ -29,6 +29,8 @@ public final class InMemoryBankDao {
     private final Map<Long, QuestionRecord> questions = new LinkedHashMap<>();
     /** 考卷 id → 題目 id（依順序）。 */
     private final Map<Long, List<Long>> examQuestions = new LinkedHashMap<>();
+    /** 題組 id → 文章。題目記錄只存 groupId，讀取時才填入文章（文章修改後同組一起改變）。 */
+    private final Map<Long, String> groups = new LinkedHashMap<>();
     private long nextId = 1;
 
     private final SubjectDao subjectDao = new Subjects();
@@ -60,10 +62,20 @@ public final class InMemoryBankDao {
 
     /** 整批匯入：在同一把鎖內完成，驗證已在服務層做完，因此不會只寫入一部分。 */
     public ImportDao imports() {
-        return (examId, newExam, list) -> {
+        return (examId, newExam, list, passages, groupIndexes) -> {
             synchronized (InMemoryBankDao.this) {
                 long target = newExam != null ? examDao.create(newExam).id() : examId;
-                list.forEach(q -> questionDao.createInExam(target, q));
+                List<Long> groupIds = new ArrayList<>();
+                for (String passage : passages) {
+                    long id = nextId++;
+                    groups.put(id, passage);
+                    groupIds.add(id);
+                }
+                for (int i = 0; i < list.size(); i++) {
+                    Integer index = groupIndexes.get(i);
+                    questionDao.createInExam(target, list.get(i).withGroup(index == null ? null : groupIds.get(index), null));
+                }
+                deleteEmptyGroups();
                 return target;
             }
         };
@@ -129,6 +141,7 @@ public final class InMemoryBankDao {
                 if (ids != null) {
                     ids.forEach(InMemoryBankDao.this::deleteIfOrphan);
                 }
+                deleteEmptyGroups();
             }
         }
 
@@ -160,7 +173,7 @@ public final class InMemoryBankDao {
                 QuestionRecord record = toRecord(id, question);
                 questions.put(id, record);
                 examQuestions.get(examId).add(id);
-                return record;
+                return withPassage(record);
             }
         }
 
@@ -169,21 +182,23 @@ public final class InMemoryBankDao {
             synchronized (InMemoryBankDao.this) {
                 QuestionRecord record = toRecord(questionId, question);
                 questions.put(questionId, record);
-                return record;
+                deleteEmptyGroups();
+                return withPassage(record);
             }
         }
 
         @Override
         public Optional<QuestionRecord> findById(long questionId) {
             synchronized (InMemoryBankDao.this) {
-                return Optional.ofNullable(questions.get(questionId));
+                return Optional.ofNullable(questions.get(questionId)).map(InMemoryBankDao.this::withPassage);
             }
         }
 
         @Override
         public List<QuestionRecord> findByIds(List<Long> questionIds) {
             synchronized (InMemoryBankDao.this) {
-                return questionIds.stream().map(questions::get).filter(q -> q != null).toList();
+                return questionIds.stream().map(questions::get).filter(q -> q != null)
+                        .map(InMemoryBankDao.this::withPassage).toList();
             }
         }
 
@@ -230,6 +245,7 @@ public final class InMemoryBankDao {
                     ids.remove(questionId);
                 }
                 deleteIfOrphan(questionId);
+                deleteEmptyGroups();
             }
         }
 
@@ -237,6 +253,20 @@ public final class InMemoryBankDao {
         public void reorder(long examId, List<Long> questionIds) {
             synchronized (InMemoryBankDao.this) {
                 examQuestions.put(examId, new ArrayList<>(questionIds));
+            }
+        }
+
+        @Override
+        public boolean isGroupInExam(long examId, long groupId) {
+            synchronized (InMemoryBankDao.this) {
+                return byExam(examId).stream().anyMatch(q -> Long.valueOf(groupId).equals(q.groupId()));
+            }
+        }
+
+        @Override
+        public void updatePassage(long groupId, String passage) {
+            synchronized (InMemoryBankDao.this) {
+                groups.replace(groupId, passage);
             }
         }
     }
@@ -264,7 +294,8 @@ public final class InMemoryBankDao {
     // 以下私有方法只在持有外層鎖時呼叫
 
     private List<QuestionRecord> byExam(long examId) {
-        return examQuestions.getOrDefault(examId, List.of()).stream().map(questions::get).toList();
+        return examQuestions.getOrDefault(examId, List.of()).stream().map(questions::get).map(this::withPassage)
+                .toList();
     }
 
     private ExamStats stats(ExamRecord exam) {
@@ -280,12 +311,29 @@ public final class InMemoryBankDao {
         }
     }
 
+    private void deleteEmptyGroups() {
+        groups.keySet().removeIf(id -> questions.values().stream().noneMatch(q -> id.equals(q.groupId())));
+    }
+
+    private QuestionRecord withPassage(QuestionRecord q) {
+        if (q.groupId() == null) {
+            return q;
+        }
+        return new QuestionRecord(q.id(), q.type(), q.content(), q.explanation(), q.trueFalseAnswer(), q.ownerId(),
+                q.options(), q.groupId(), groups.get(q.groupId()));
+    }
+
     private QuestionRecord toRecord(long id, NewQuestion q) {
         List<OptionRecord> options = new ArrayList<>();
         for (NewOption option : q.options()) {
             options.add(new OptionRecord(nextId++, option.content(), option.correct()));
         }
+        Long groupId = q.groupId();
+        if (groupId == null && q.newPassage() != null) {
+            groupId = nextId++;
+            groups.put(groupId, q.newPassage());
+        }
         return new QuestionRecord(id, q.type(), q.content(), q.explanation(), q.trueFalseAnswer(), q.ownerId(),
-                List.copyOf(options));
+                List.copyOf(options), groupId, null);
     }
 }

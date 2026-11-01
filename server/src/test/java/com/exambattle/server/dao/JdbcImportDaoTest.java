@@ -45,6 +45,7 @@ class JdbcImportDaoTest {
     void cleanUp() throws Exception {
         try (Connection c = database.connection()) {
             for (String sql : List.of("DELETE FROM exams WHERE created_by = ?", "DELETE FROM questions WHERE created_by = ?",
+                    "DELETE FROM question_groups WHERE created_by = ?",
                     "DELETE FROM subjects WHERE created_by = ?", "DELETE FROM users WHERE id = ?")) {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
                     ps.setLong(1, userId);
@@ -73,6 +74,22 @@ class JdbcImportDaoTest {
     }
 
     @Test
+    void importsGroupsByIndex() throws Exception {
+        JdbcImportDao imports = new JdbcImportDao(database);
+        JdbcQuestionDao questions = new JdbcQuestionDao(database);
+
+        long examId = imports.importQuestions(null, new NewExam("題組匯入", subjectId, null, null, userId),
+                List.of(question("獨立"), question("甲 1"), question("甲 2"), question("乙 1")),
+                List.of("文章甲", "文章乙"), java.util.Arrays.asList(null, 0, 0, 1));
+
+        List<QuestionRecord> loaded = questions.findByExam(examId);
+        assertEquals(java.util.Arrays.asList(null, "文章甲", "文章甲", "文章乙"),
+                loaded.stream().map(QuestionRecord::passage).toList());
+        assertEquals(loaded.get(1).groupId(), loaded.get(2).groupId());
+        assertEquals(2, count("SELECT COUNT(*) FROM question_groups WHERE created_by = ?"));
+    }
+
+    @Test
     void failureRollsBackEverythingIncludingTheNewExam() throws Exception {
         JdbcImportDao imports = new JdbcImportDao(database);
         NewQuestion broken = new NewQuestion(QuestionType.SINGLE_CHOICE, null, null, null, userId, List.of()); // content NOT NULL
@@ -82,6 +99,11 @@ class JdbcImportDaoTest {
 
         assertEquals(0, count("SELECT COUNT(*) FROM exams WHERE created_by = ?"));
         assertEquals(0, count("SELECT COUNT(*) FROM questions WHERE created_by = ?"));
+
+        assertThrows(DataAccessException.class, () -> imports.importQuestions(null,
+                new NewExam("不應存在", subjectId, null, null, userId), List.of(question("好的"), broken),
+                List.of("文章"), java.util.Arrays.asList(0, 0)));
+        assertEquals(0, count("SELECT COUNT(*) FROM question_groups WHERE created_by = ?"), "題組也回滾");
     }
 
     private int count(String sql) throws Exception {

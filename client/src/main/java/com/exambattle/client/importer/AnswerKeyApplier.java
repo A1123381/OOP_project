@@ -53,6 +53,9 @@ public final class AnswerKeyApplier {
 
     private static Optional<String> applyOne(ImportItem item, AnswerKey key) {
         QuestionDraft d = item.draft();
+        if (item.unsupported() && d.type() == null) {
+            return Optional.of("切題時判斷為非選擇題，答案「" + key.token() + "」未套用");
+        }
         if (d.type() == null) {
             return Optional.of("尚未選擇題型，答案「" + key.token() + "」未套用");
         }

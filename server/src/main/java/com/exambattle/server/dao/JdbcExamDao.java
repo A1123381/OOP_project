@@ -90,11 +90,13 @@ public final class JdbcExamDao implements ExamDao {
                     }
                 }
             }
+            List<Long> groupIds = JdbcQuestionDao.groupIdsOf(c, questionIds);
             try (PreparedStatement ps = c.prepareStatement("DELETE FROM exams WHERE id = ?")) {
                 ps.setLong(1, examId);
                 ps.executeUpdate();
             }
             deleteOrphans(c, questionIds);
+            JdbcQuestionDao.deleteEmptyGroups(c, groupIds);
             return null;
         });
     }
