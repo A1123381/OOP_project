@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.exambattle</groupId>
+        <artifactId>exam-battle</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>client</artifactId>
+    <name>Exam Battle - Client (JavaFX + console)</name>
+
+    <properties>
+        <!-- 預設啟動 GUI；主控台版：java -cp client.jar com.exambattle.client.ClientMain -->
+        <main.class>com.exambattle.client.gui.GuiLauncher</main.class>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.exambattle</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <!-- 本機文字擷取與 OCR（第六階段，D-026） -->
+        <dependency>
+            <groupId>com.exambattle</groupId>
+            <artifactId>ocr</artifactId>
+        </dependency>
+        <!-- JavaFX 依目前作業系統下載對應的原生檔；打包出的 jar 只能在相同平台執行（見 DECISIONS.md D-017） -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

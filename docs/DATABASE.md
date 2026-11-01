@@ -1,0 +1,111 @@
+# 資料庫設定（MariaDB）
+
+伺服器從第二階段起需要資料庫才能啟動。執行一般測試（`mvn test`）**不需要**資料庫。
+
+本專案使用 **MariaDB**（本機為 MariaDB 13.0，服務名稱 `MariaDB`，埠號 3306），驅動為 MariaDB Connector/J。
+`db/schema.sql` 只使用 MariaDB 與 MySQL 8 共通的語法，見 DECISIONS.md D-016。
+
+以下指令在 PowerShell 中、於專案根目錄執行。
+
+> **本機狀態（2026-11-01，第五階段）：** 第 1–4 步已完成。`exam_battle`、`exam_battle_test` 資料庫、`exam_battle` 帳號、
+> 全部資料表（users、subjects、exams、questions、question_options、exam_questions、practice_records、answer_records、wrong_questions）
+> 與初始大分類都已建立，
+> `config/db.properties` 已產生（帳號密碼為隨機產生，只存在該檔案中）。換電腦或重建資料庫時再照以下步驟做。
+
+## 1. 確認 MariaDB 服務
+
+```powershell
+Get-Service MariaDB
+```
+
+狀態不是 `Running` 時，以**系統管理員**身分執行：
+
+```powershell
+Start-Service MariaDB
+```
+
+舊的 `MySQL80` 服務不需要啟動；兩者都使用 3306 埠，不能同時執行。
+
+## 2. 建立資料庫與專用帳號
+
+`mariadb.exe` 不在 PATH 中，請用完整路徑以 root 登入（會詢問 root 密碼）：
+
+```powershell
+& "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" -u root -p
+```
+
+在 `MariaDB>` 提示中執行。請把 `你的密碼` 換成自己設定的密碼：
+
+```sql
+CREATE DATABASE IF NOT EXISTS exam_battle      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS exam_battle_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'exam_battle'@'localhost' IDENTIFIED BY '你的密碼';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX ON exam_battle.*      TO 'exam_battle'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX ON exam_battle_test.* TO 'exam_battle'@'localhost';
+EXIT;
+```
+
+- 伺服器只使用 `exam_battle` 這個帳號，不使用 root。
+- `exam_battle_test` 只給整合測試使用，與正式資料分開。
+- 字元集指定為 `utf8mb4_unicode_ci`：不分大小寫，所以 `alice` 與 `ALICE` 視為同一帳號。不使用 MySQL 專用的 `utf8mb4_0900_ai_ci`。
+
+## 3. 建立資料表與初始大分類
+
+```powershell
+Get-Content db\schema.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle
+```
+
+```powershell
+Get-Content db\schema.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle_test
+```
+
+初始大分類（數學、英文、國文、電腦科學、自然科學、社會科學、證照考試、其他）：
+
+```powershell
+Get-Content db\seed_subjects.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle
+```
+
+`schema.sql` 與 `seed_subjects.sql` 都可重複執行，不會刪除既有資料；之後的階段新增資料表時，重新執行 `schema.sql` 即可。
+匯入中文資料時務必加上 `--default-character-set=utf8mb4`（以及 PowerShell 的 `-Encoding UTF8`），否則中文可能變成亂碼。
+
+## 4. 設定伺服器連線
+
+複製範本並填入第 2 步設定的密碼：
+
+```powershell
+Copy-Item config\db.properties.example config\db.properties
+notepad config\db.properties
+```
+
+```properties
+db.url=jdbc:mariadb://localhost:3306/exam_battle
+db.user=exam_battle
+db.password=你的密碼
+```
+
+`config/db.properties` 已列在 `.gitignore`，不會進入版本控制。**不要把任何密碼寫進其他檔案或文件。**
+也可以改用環境變數 `EXAMBATTLE_DB_URL`、`EXAMBATTLE_DB_USER`、`EXAMBATTLE_DB_PASSWORD`；有設定時優先於設定檔。
+
+啟動伺服器時會檢查連線與 `users` 資料表，有問題會印出原因並結束。
+
+## 5.（選用）執行資料庫整合測試
+
+`JdbcUserDaoTest`、`JdbcBankDaoTest`、`JdbcPracticeDaoTest` 只在設定下列環境變數時執行，只會刪除自己建立的資料：
+
+```powershell
+$env:EXAMBATTLE_TEST_DB_URL = 'jdbc:mariadb://localhost:3306/exam_battle_test'
+$env:EXAMBATTLE_TEST_DB_USER = 'exam_battle'
+$env:EXAMBATTLE_TEST_DB_PASSWORD = Read-Host '測試資料庫密碼'
+mvn -pl server -am test
+```
+
+預期：`JdbcUserDaoTest` 3 個、`JdbcBankDaoTest` 4 個、`JdbcPracticeDaoTest` 5 個測試通過（未設定時顯示為略過）。
+
+## 常見問題
+
+| 訊息 | 原因 |
+|---|---|
+| `Could not connect to address=(host=localhost)(port=3306)` | MariaDB 服務未啟動，或埠號不是 3306 |
+| `Access denied for user 'exam_battle'@'localhost'` | 密碼錯誤，或第 2 步的帳號未建立 |
+| `找不到 xxx 資料表` | 尚未執行第 3 步，或升級後未重新執行 `schema.sql` |
+| `Unknown collation: 'utf8mb4_0900_ai_ci'` | 使用了舊版 schema；請改用目前的 `db/schema.sql` |

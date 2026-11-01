@@ -1,0 +1,8 @@
+target/
+.idea/
+*.iml
+.vscode/
+*.class
+*.log
+config/db.properties
+tessdata/

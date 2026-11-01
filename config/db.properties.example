@@ -1,0 +1,5 @@
+# 複製成 config/db.properties 後填入自己的設定（config/db.properties 不會進版本控制）。
+# 也可以改用環境變數 EXAMBATTLE_DB_URL / EXAMBATTLE_DB_USER / EXAMBATTLE_DB_PASSWORD。
+db.url=jdbc:mariadb://localhost:3306/exam_battle
+db.user=exam_battle
+db.password=
