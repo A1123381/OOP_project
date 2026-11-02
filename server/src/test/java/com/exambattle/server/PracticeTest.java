@@ -54,7 +54,7 @@ class PracticeTest extends ServerTestBase {
         student = loggedIn("student");
         math = owner.request(MessageType.LIST_SUBJECTS, null, MessageType.SUBJECTS).payloadAs(SubjectList.class)
                 .subjects().stream().filter(s -> s.name().equals("數學")).findFirst().orElseThrow().id();
-        examId = owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, "期中考", math, 2024, null),
+        examId = owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, "期中考", math, 2024, null, com.exambattle.common.protocol.bank.Visibility.PUBLIC),
                 MessageType.EXAM_SAVED).payloadAs(ExamSummary.class).id();
         add(choice(QuestionType.SINGLE_CHOICE, "單選 1+1", "1", "2*", "3"));
         add(choice(QuestionType.MULTIPLE_CHOICE, "多選 質數", "2*", "3*", "4", "6", "8"));

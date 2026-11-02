@@ -15,6 +15,7 @@ import com.exambattle.common.protocol.bank.QuestionRequest;
 import com.exambattle.common.protocol.bank.QuestionSaved;
 import com.exambattle.common.protocol.bank.ReorderRequest;
 import com.exambattle.common.protocol.bank.SubjectList;
+import com.exambattle.common.protocol.bank.TakeDownRequest;
 import com.exambattle.common.protocol.payload.UserInfo;
 import com.exambattle.server.Session;
 import com.exambattle.server.bank.BankException;
@@ -36,7 +37,8 @@ public final class BankHandler {
             MessageType.LIST_EXAMS, MessageType.GET_EXAM,
             MessageType.CREATE_EXAM, MessageType.UPDATE_EXAM, MessageType.DELETE_EXAM,
             MessageType.ADD_QUESTION, MessageType.UPDATE_QUESTION, MessageType.DELETE_QUESTION,
-            MessageType.REORDER_QUESTIONS, MessageType.IMPORT_QUESTIONS, MessageType.UPDATE_GROUP);
+            MessageType.REORDER_QUESTIONS, MessageType.IMPORT_QUESTIONS, MessageType.UPDATE_GROUP,
+            MessageType.TAKE_DOWN_EXAM);
 
     private final SubjectService subjects;
     private final ExamService exams;
@@ -55,7 +57,7 @@ public final class BankHandler {
                 case CREATE_SUBJECT -> Message.of(MessageType.SUBJECT_SAVED, requestId,
                         subjects.create(message.payloadAs(CreateSubjectRequest.class).name(), user.userId()));
                 case LIST_EXAMS -> Message.of(MessageType.EXAMS, requestId,
-                        new ExamList(exams.list(message.payloadAs(ListExamsRequest.class).subjectId())));
+                        new ExamList(exams.list(message.payloadAs(ListExamsRequest.class), user)));
                 case GET_EXAM -> Message.of(MessageType.EXAM_DETAIL, requestId,
                         exams.detail(examId(message.payloadAs(ExamRef.class).examId(), requestId), user));
                 case CREATE_EXAM -> Message.of(MessageType.EXAM_SAVED, requestId,
@@ -97,6 +99,8 @@ public final class BankHandler {
                         exams.importQuestions(message.payloadAs(ImportRequest.class), user));
                 case UPDATE_GROUP -> Message.of(MessageType.GROUP_SAVED, requestId,
                         exams.updateGroup(message.payloadAs(GroupRequest.class), user));
+                case TAKE_DOWN_EXAM -> Message.of(MessageType.EXAM_SAVED, requestId,
+                        exams.takeDown(message.payloadAs(TakeDownRequest.class), user));
                 default -> throw new IllegalArgumentException("不是題庫訊息: " + type);
             };
             session.send(reply);

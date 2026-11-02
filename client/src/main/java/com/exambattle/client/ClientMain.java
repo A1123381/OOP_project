@@ -13,7 +13,7 @@ import java.nio.charset.Charset;
 /**
  * 主控台客戶端進入點。連線後以 /register、/login 指令登入。
  *
- * <pre>java -jar client/target/client-0.1.0-SNAPSHOT.jar [host] [port]</pre>
+ * <pre>java -jar client/target/client-1.0.0.jar [host] [port]</pre>
  */
 public final class ClientMain {
 

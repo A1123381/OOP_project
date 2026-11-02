@@ -60,6 +60,7 @@ public enum MessageType {
     IMPORT_DONE(false),
     UPDATE_GROUP(true),
     GROUP_SAVED(false),
+    TAKE_DOWN_EXAM(true),
 
     // 單人練習、紀錄、錯題本（第五階段）
     START_PRACTICE(true),
@@ -74,7 +75,20 @@ public enum MessageType {
     LIST_WRONG(true),
     WRONG_LIST(false),
     REMOVE_WRONG(true),
-    WRONG_REMOVED(false);
+    WRONG_REMOVED(false),
+
+    // 多人競賽（第四階段）
+    START_GAME(true),
+    GAME_STARTED(false),
+    GAME_QUESTION(false),
+    SUBMIT_ANSWER(true),
+    ANSWER_ACCEPTED(false),
+    GAME_PROGRESS(false),
+    QUESTION_RESULT(false),
+    GAME_OVER(false),
+    END_GAME(true),
+    KICK_PLAYER(true),
+    KICKED(false);
 
     private final boolean clientSendable;
 

@@ -33,7 +33,11 @@ public final class ClientState {
 
     private final MessageFormatter formatter;
     private final ObjectProperty<UserInfo> me = new SimpleObjectProperty<>();
+    /** 是否為管理員（第八階段）：可以下架別人的公開考卷。 */
+    private final javafx.beans.property.BooleanProperty admin = new javafx.beans.property.SimpleBooleanProperty();
     private final ObjectProperty<RoomState> room = new SimpleObjectProperty<>();
+    /** 最近一則競賽訊息（GAME_STARTED、GAME_QUESTION、GAME_PROGRESS、QUESTION_RESULT、GAME_OVER），給房間畫面使用。 */
+    private final ObjectProperty<Message> game = new SimpleObjectProperty<>();
     private final ObservableList<UserInfo> online = FXCollections.observableArrayList();
     private final ObservableList<String> lobbyChat = FXCollections.observableArrayList();
     private final ObservableList<String> roomChat = FXCollections.observableArrayList();
@@ -52,6 +56,18 @@ public final class ClientState {
 
     public UserInfo me() {
         return me.get();
+    }
+
+    public boolean admin() {
+        return admin.get();
+    }
+
+    public javafx.beans.property.BooleanProperty adminProperty() {
+        return admin;
+    }
+
+    public ObjectProperty<Message> gameProperty() {
+        return game;
     }
 
     public ObjectProperty<RoomState> roomProperty() {
@@ -81,6 +97,7 @@ public final class ClientState {
                 case LOGIN_OK -> {
                     LoginOk ok = message.payloadAs(LoginOk.class);
                     me.set(ok.user());
+                    admin.set(ok.admin());
                     online.setAll(ok.online());
                     // 主控台的歡迎詞含指令說明，GUI 使用自己的文字
                     add(lobbyChat, "* 登入成功，歡迎 " + ok.user().displayName() + "！可以在右側建立或加入房間，或到「題庫」分頁管理考卷。");
@@ -113,6 +130,17 @@ public final class ClientState {
                     updateRoomPlayers(players -> players.removeIf(p -> p.userId() == userId));
                     describe(message).ifPresent(line -> add(roomChat, line));
                 }
+                case GAME_STARTED, GAME_QUESTION, GAME_PROGRESS, QUESTION_RESULT, GAME_OVER -> {
+                    if (type == MessageType.GAME_STARTED || type == MessageType.GAME_OVER) {
+                        setPlaying(type == MessageType.GAME_STARTED);
+                        describe(message).ifPresent(line -> add(roomChat, line));
+                    }
+                    game.set(message);
+                }
+                case KICKED -> {
+                    room.set(null);
+                    describe(message).ifPresent(line -> add(lobbyChat, line));
+                }
                 case ROOM_CLOSED, LEFT_ROOM -> {
                     room.set(null);
                     describe(message).ifPresent(line -> {
@@ -144,7 +172,16 @@ public final class ClientState {
         }
         List<UserInfo> players = new ArrayList<>(current.players());
         change.accept(players);
-        room.set(new RoomState(current.roomCode(), current.ownerUserId(), current.maxPlayers(), List.copyOf(players)));
+        room.set(new RoomState(current.roomCode(), current.ownerUserId(), current.maxPlayers(), List.copyOf(players),
+                current.playing()));
+    }
+
+    private void setPlaying(boolean playing) {
+        RoomState current = room.get();
+        if (current != null) {
+            room.set(new RoomState(current.roomCode(), current.ownerUserId(), current.maxPlayers(), current.players(),
+                    playing));
+        }
     }
 
     private static void add(ObservableList<String> list, String line) {

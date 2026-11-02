@@ -16,6 +16,7 @@ public final class Room {
     private final long ownerUserId;
     private final int maxPlayers;
     private final Map<Long, Session> players = new LinkedHashMap<>();
+    private boolean playing;
 
     Room(String code, Session owner, int maxPlayers) {
         this.code = code;
@@ -32,12 +33,26 @@ public final class Room {
         return ownerUserId;
     }
 
-    boolean isOwner(Session session) {
+    public boolean isOwner(Session session) {
         return session.user().userId() == ownerUserId;
     }
 
     boolean isFull() {
         return players.size() >= maxPlayers;
+    }
+
+    /** 競賽進行中（第四階段）：不能加入或移出玩家。 */
+    public boolean playing() {
+        return playing;
+    }
+
+    public void setPlaying(boolean playing) {
+        this.playing = playing;
+    }
+
+    /** 這位使用者目前的連線；不在房間時為 null。 */
+    Session member(long userId) {
+        return players.get(userId);
     }
 
     void add(Session session) {
@@ -55,6 +70,6 @@ public final class Room {
 
     public RoomState state() {
         List<UserInfo> infos = players.values().stream().map(Session::user).toList();
-        return new RoomState(code, ownerUserId, maxPlayers, infos);
+        return new RoomState(code, ownerUserId, maxPlayers, infos, playing);
     }
 }

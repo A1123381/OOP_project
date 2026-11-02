@@ -40,7 +40,7 @@ mvn test
 mvn -q package
 ```
 
-產生 `server/target/server-0.1.0-SNAPSHOT.jar`、`client/target/client-0.1.0-SNAPSHOT.jar`、`tools/target/tools-0.1.0-SNAPSHOT.jar`。
+產生 `server/target/server-1.0.0.jar`、`client/target/client-1.0.0.jar`、`tools/target/tools-1.0.0.jar`。
 伺服器執行中時 jar 會被鎖住，重新打包前請先關閉伺服器。
 
 ## 3. 手動測試：第二階段（登入與房間，主控台客戶端）
@@ -48,11 +48,11 @@ mvn -q package
 先依 [DATABASE.md](DATABASE.md) 確認 MariaDB 已設定，再開四個終端機視窗。
 
 ```bash
-java -jar server/target/server-0.1.0-SNAPSHOT.jar
+java -jar server/target/server-1.0.0.jar
 ```
 
 ```bash
-java -cp client/target/client-0.1.0-SNAPSHOT.jar com.exambattle.client.ClientMain
+java -cp client/target/client-1.0.0.jar com.exambattle.client.ClientMain
 ```
 
 （第二、三、四個視窗都執行上面的主控台客戶端，分別當作 Alice、Bob、Carol。第三階段起 `java -jar` 會開啟 GUI，見第 4 節。）
@@ -79,11 +79,11 @@ java -cp client/target/client-0.1.0-SNAPSHOT.jar com.exambattle.client.ClientMai
 先啟動伺服器，再開兩個 GUI 客戶端（可以在同一台電腦開兩個視窗）：
 
 ```bash
-java -jar server/target/server-0.1.0-SNAPSHOT.jar
+java -jar server/target/server-1.0.0.jar
 ```
 
 ```bash
-java -jar client/target/client-0.1.0-SNAPSHOT.jar
+java -jar client/target/client-1.0.0.jar
 ```
 
 在 JDK 24 以上執行時，主控台會出現 `Unsupported JavaFX configuration` 與 `sun.misc.Unsafe` 警告，不影響使用（見 DECISIONS.md D-017）。
@@ -113,7 +113,7 @@ java -jar client/target/client-0.1.0-SNAPSHOT.jar
 伺服器啟動後：
 
 ```bash
-java -jar tools/target/tools-0.1.0-SNAPSHOT.jar localhost 5555 100 10 10
+java -jar tools/target/tools-1.0.0.jar localhost 5555 100 10 10
 ```
 
 參數依序為 host、port、客戶端數、房間數、每人訊息數。每個客戶端會註冊一個 `lt_` 開頭的帳號、登入並進入房間。預期輸出：
@@ -223,6 +223,46 @@ DELETE FROM users WHERE username LIKE 'lt\_%';
 | 16 | 「練習」→ 完整考卷 → 跳到第 11、22、36 題 | 題目上方有「題組文章」，【11】以藍色粗體顯示；收合後換題維持收合 |
 | 17 | 交卷 | 結果中每個題組第一題上方有收合的文章；錯題本預覽也顯示文章 |
 | 18 | 「儲存草稿…」→ 重開 →「開啟草稿…」 | 題組與文章還原，同組仍共用一篇文章 |
+
+## 10. 手動測試：第四階段（多人競賽）
+
+準備：伺服器已啟動；用 A、B 兩個帳號開兩個客戶端（同一台電腦開兩個視窗即可）。A 有一份已設定答案的考卷（建議 3 題：單選、多選、題組題各一）。
+
+| 步驟 | 操作 | 預期結果 |
+|---|---|---|
+| 1 | A 建立房間，B 用代碼加入 | A 看到「競賽設定」；B 看到「等待房主開始競賽」 |
+| 2 | 再開一個帳號 C 加入，A 選取 C →「移出玩家」 | C 回到大廳並看到「你被房主移出房間」；A、B 看到 C「被房主移出房間」 |
+| 3 | B 選取玩家：B 看不到「移出玩家」按鈕 | 只有房主能移出 |
+| 4 | A 選考卷、依考卷順序、全部題目、每題 10 秒 →「開始競賽」 | 兩人同時看到「第 1 / 3 題」與倒數 |
+| 5 | C 用代碼加入 | 「正在競賽中」，無法加入 |
+| 6 | B 送出正確答案、A 送出錯誤答案 | B 送出後顯示「已送出」；兩人都送出後立刻公布：B「✔ 答對！+1000」、A「✘ 答錯 +0」；排行榜 B 第 1 |
+| 7 | 第 2 題（多選）：B 只選一個正確選項、A 全對 | B「△ 部分給分」；A「✔ 答對！+1000」 |
+| 8 | 第 3 題：只有 B 作答 | 題目上方顯示題組文章；時間到後才公布；A「⏱ 沒有作答 +0」 |
+| 9 | 等待最終排行榜 | 顯示總分、名次；同分同名次；顯示加入錯題本的題數 |
+| 10 | 到「錯題本」 | A、B 各自沒有全對的題目都在；「紀錄」分頁沒有新紀錄 |
+| 11 | 「回到房間」→ A 再開一場 → 第 1 題時 A 按「結束競賽」 | 兩人看到「房主提前結束」的最終排行榜 |
+| 12 | 再開一場，競賽中 B 按「離開房間」 | A 的排行榜不再有 B；A 作答後立刻公布 |
+| 13 | 再開一場，競賽中 A 關閉視窗 | B 看到房間解散並回到大廳 |
+| 14 | 連續答對 2 題以上 | 第 2 題起顯示「連續答對 N 題，加成 +100…」，最多 +500 |
+
+## 11. 手動測試：第八階段（公開／私人題庫、搜尋、管理員、介面）
+
+準備：資料庫已執行 `db/migrations/002_visibility_admin.sql`。準備三個帳號 A（建立者）、B（一般使用者）、M（管理員：用 `UPDATE users SET is_admin = 1 WHERE username = 'M 的帳號';` 設定後再登入）。
+
+| 步驟 | 操作 | 預期結果 |
+|---|---|---|
+| 1 | M 登入 | 上方顯示【管理員】；A、B 沒有 |
+| 2 | A 新增考卷（不改公開範圍）並加一題 | 清單的「公開範圍」為「私人」 |
+| 3 | B 到「題庫」與「練習」 | 看不到 A 的私人考卷；隨機抽題也不會抽到 |
+| 4 | A「編輯考卷」→ 公開 | B 重新整理後看得到，可以練習；A 開房競賽時 B 也能作答 |
+| 5 | B 在搜尋框輸入考卷名稱的一部分、年份、類型、A 的名稱 | 都能找到；輸入 A 私人考卷的名稱找不到 |
+| 6 | 勾選「只看我的」 | 只列出自己建立的考卷 |
+| 7 | B 選取 A 的公開考卷 | 看不到「下架」按鈕 |
+| 8 | M 選取 A 的公開考卷 →「下架」→ 確認 | 公開範圍變成「已下架」；B 重新整理後看不到 |
+| 9 | A「編輯考卷」 | 「公開」選項停用，並顯示「已被管理員下架」 |
+| 10 | M「解除下架」 | 變成「私人」；A 可以再改成公開 |
+| 11 | 「匯入」分頁 → 匯入題庫 → 建立新考卷（不勾「公開」） | 新考卷為私人 |
+| 12 | 按 Ctrl＋＋ 數次、Ctrl＋0；按 Ctrl+3 | 字級放大後還原；切換到「題庫」分頁；重新開啟客戶端後字級維持 |
 
 ## 編碼注意事項
 

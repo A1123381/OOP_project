@@ -1,6 +1,10 @@
-# Exam Battle 通訊協定（v0.7）
+# Exam Battle 通訊協定（v0.9）
 
-狀態：**題組支援版**（第四階段多人競賽延後，見 DECISIONS.md D-022；第六階段沒有協定變動）。擁有者：architect。變更須同步記錄於 DECISIONS.md。
+狀態：**第八階段實作版**（第四階段多人競賽延後，見 DECISIONS.md D-022；第六階段沒有協定變動）。擁有者：architect。變更須同步記錄於 DECISIONS.md。
+
+v0.9 相對 v0.8：公開／私人題庫與管理員下架（D-039、D-040）。`ExamSummary` 加上 `visibility`、`takenDown`；`ExamRequest` 加上 `visibility`；`LIST_EXAMS` 加上 `keyword`、`mineOnly`（D-041）；新增 `TAKE_DOWN_EXAM`；`LOGIN_OK` 加上 `admin`；新增錯誤碼 `NOT_ADMIN`、`EXAM_TAKEN_DOWN`。看不到的私人考卷一律回 `EXAM_NOT_FOUND`。
+
+v0.8 相對 v0.7：新增多人競賽訊息（第 3.8 節）與房主移出玩家（`KICK_PLAYER`／`KICKED`，第 3.3 節）；`ROOM_STATE` 加上 `playing`；`ROOM_PLAYER_LEFT` 的 `reason` 加上 `KICKED`；新增錯誤碼 `NOT_ROOM_OWNER`、`PLAYER_NOT_FOUND`、`GAME_IN_PROGRESS`、`GAME_NOT_FOUND`、`WRONG_QUESTION`、`TIME_UP`。
 
 v0.7 相對 v0.6：新增題組（D-034）。`QuestionData` 與 `PracticeQuestion` 加上 `groupId`、`passage`；新增 `UPDATE_GROUP`／`GROUP_SAVED`（第 3.5 節）與錯誤碼 `GROUP_NOT_FOUND`；`IMPORT_QUESTIONS` 加上 `groups`、`groupIndexes`。新欄位都可以省略，舊的請求格式仍然有效。
 
@@ -131,7 +135,7 @@ v0.3 相對 v0.2 的破壞性變更：
 ```
 - `roomCode` 不分大小寫，前後空白會被去除。
 - 成功時回 `ROOM_STATE`，並對房內其他人送 `ROOM_PLAYER_JOINED`。
-- 錯誤：`ROOM_NOT_FOUND`、`ROOM_FULL`、`ALREADY_IN_ROOM`。
+- 錯誤：`ROOM_NOT_FOUND`、`ROOM_FULL`、`ALREADY_IN_ROOM`、`GAME_IN_PROGRESS`（競賽進行中不能加入）。
 
 #### ROOM_STATE（S → C）
 ```json
@@ -139,6 +143,7 @@ v0.3 相對 v0.2 的破壞性變更：
 ```
 - `roomCode`：6 碼，字元取自 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`，在進行中的房間內唯一。
 - `players` 依加入順序排列。
+- `playing`（v0.8）：競賽進行中為 `true`。
 
 #### GET_ROOM（C → S）
 重新取得自己所在房間的 `ROOM_STATE`（顯示房間玩家）。不在房間回 `NOT_IN_ROOM`。
@@ -157,7 +162,15 @@ v0.3 相對 v0.2 的破壞性變更：
 {"type":"ROOM_PLAYER_JOINED","requestId":null,"payload":{"roomCode":"K7M2XQ","player":{"userId":12,"username":"alice","displayName":"Alice"}}}
 {"type":"ROOM_PLAYER_LEFT","requestId":null,"payload":{"roomCode":"K7M2XQ","player":{"userId":12,"username":"alice","displayName":"Alice"},"reason":"LEFT"}}
 ```
-`reason`：`LEFT`（送出 LEAVE_ROOM）| `DISCONNECTED`（斷線、逾時或 BYE）。
+`reason`：`LEFT`（送出 LEAVE_ROOM）| `DISCONNECTED`（斷線、逾時或 BYE）| `KICKED`（被房主移出，v0.8）。
+
+#### KICK_PLAYER（C → S，房主）／KICKED（S → 被移出的人）（v0.8）
+```json
+{"type":"KICK_PLAYER","requestId":"c-7","payload":{"userId":12}}
+{"type":"KICKED","requestId":null,"payload":{"roomCode":"K7M2XQ"}}
+```
+- 只有房主、只能在競賽開始前（D-038）。成功時房主收到 `ROOM_STATE`，其他人收到 `ROOM_PLAYER_LEFT`（`KICKED`），被移出的人收到 `KICKED` 並回到大廳。
+- 錯誤：`NOT_IN_ROOM`、`NOT_ROOM_OWNER`、`GAME_IN_PROGRESS`、`PLAYER_NOT_FOUND`；移出自己回 `INVALID_PAYLOAD`。
 
 #### ROOM_CLOSED（S → 房內其他人）
 ```json
@@ -188,7 +201,8 @@ v0.3 相對 v0.2 的破壞性變更：
 ```json
 SubjectInfo  {"id":1,"name":"數學"}
 ExamSummary  {"id":7,"title":"113 學年度期中考","subject":{"id":1,"name":"數學"},"year":2024,"examType":"期中考",
-              "owner":{"userId":12,"username":"teacher","displayName":"王老師"},"questionCount":4,"unansweredCount":1}
+              "owner":{"userId":12,"username":"teacher","displayName":"王老師"},"questionCount":4,"unansweredCount":1,
+              "visibility":"PUBLIC","takenDown":false}
 QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation":"基本加法",
               "options":[{"id":90,"content":"1","correct":false},{"id":91,"content":"2","correct":true}],
               "trueFalseAnswer":null,"answerSet":true,"groupId":null,"passage":null}
@@ -223,10 +237,11 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 |---|---|---|---|
 | `LIST_SUBJECTS` | `{}` | `SUBJECTS {subjects:[SubjectInfo]}`（依名稱排序） | — |
 | `CREATE_SUBJECT` | `{name}` | `SUBJECT_SAVED` = SubjectInfo | `SUBJECT_EXISTS`（不分大小寫） |
-| `LIST_EXAMS` | `{subjectId?}`（null 為全部） | `EXAMS {exams:[ExamSummary]}`（新到舊） | — |
+| `LIST_EXAMS` | `{subjectId?, keyword?, mineOnly?}`（v0.9：關鍵字搜尋、只看自己的） | `EXAMS {exams:[ExamSummary]}`（新到舊，只含看得到的考卷） | `INVALID_PAYLOAD`（關鍵字超過 50 字） |
 | `GET_EXAM` | `{examId}` | `EXAM_DETAIL {exam:ExamSummary, questions:[QuestionData]}`（依順序） | `EXAM_NOT_FOUND` |
-| `CREATE_EXAM` | `{title, subjectId, year?, examType?}` | `EXAM_SAVED` = ExamSummary | `SUBJECT_NOT_FOUND` |
-| `UPDATE_EXAM` | `{examId, title, subjectId, year?, examType?}` | `EXAM_SAVED` | `EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
+| `CREATE_EXAM` | `{title, subjectId, year?, examType?, visibility?}`（null 為 `PRIVATE`） | `EXAM_SAVED` = ExamSummary | `SUBJECT_NOT_FOUND` |
+| `UPDATE_EXAM` | `{examId, title, subjectId, year?, examType?, visibility?}`（null 為不變） | `EXAM_SAVED` | `EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND`、`EXAM_TAKEN_DOWN` |
+| `TAKE_DOWN_EXAM`（v0.9，管理員） | `{examId, takenDown}` | `EXAM_SAVED`（下架時改為 `PRIVATE`） | `NOT_ADMIN`、`EXAM_NOT_FOUND`、`INVALID_PAYLOAD`（下架非公開的考卷） |
 | `DELETE_EXAM` | `{examId}` | `EXAM_DELETED {examId}` | `EXAM_NOT_FOUND`、`NOT_OWNER` |
 | `ADD_QUESTION` | `{examId, question:QuestionData}` | `QUESTION_SAVED {examId, question}`（加在最後） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND` |
 | `UPDATE_QUESTION` | `{examId, questionId, question}` | `QUESTION_SAVED`（選項整組取代，選項 id 會改變） | 同上 + `QUESTION_NOT_FOUND` |
@@ -235,7 +250,13 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 | `UPDATE_GROUP`（v0.7） | `{examId, groupId, passage}` | `GROUP_SAVED {examId, groupId, passage}`（同組題目一起改變） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND` |
 
 欄位格式錯誤一律回 `INVALID_PAYLOAD`。刪除考卷時，只屬於這份考卷的題目會一併刪除。
-搜尋功能屬於第八階段，本版只提供依分類篩選。
+
+#### 公開範圍與管理員（v0.9）
+
+- `visibility`：`PUBLIC` | `PRIVATE`。別人的私人考卷**視同不存在**：不出現在清單與搜尋；`GET_EXAM`、修改、`START_PRACTICE`、`START_GAME` 都回 `EXAM_NOT_FOUND`；隨機抽題不會抽到。
+- `takenDown`：被管理員下架。此時一定是 `PRIVATE`，建立者把它改成 `PUBLIC` 會收到 `EXAM_TAKEN_DOWN`。管理員的清單也包含被下架的考卷。
+- `LOGIN_OK` 帶 `admin`（是否為管理員）。管理員只能用 SQL 設定（DATABASE.md）。
+- 搜尋：`keyword` 比對考卷名稱、考試類型、年份、建立者帳號與顯示名稱，不分大小寫，最多 50 字；不搜尋題目內容。
 
 ### 3.6 單人練習、紀錄、錯題本（v0.5，第五階段）
 
@@ -319,6 +340,44 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 - 題組（v0.7）：`groups` 是要建立的題組文章；`groupIndexes` 與 `questions` 一一對應，第 i 題屬於 `groups[groupIndexes[i]]`，`null` 表示不屬於題組。
   `questions` 內的 `groupId`、`passage` 會被忽略。每個題組至少要有一題；位置超出範圍、數量不一致或文章不合規則時回 `INVALID_PAYLOAD`（「第 N 個題組：…」）。
 
+### 3.8 多人競賽（v0.8，第四階段）
+
+規則見 DECISIONS.md D-037。房間內所有人（含房主）都是玩家；**出題、計時、判分、計分與排行榜一律由伺服器負責**，客戶端的倒數只用來顯示。
+
+| 請求 | payload | 成功回應 | 可能的錯誤 |
+|---|---|---|---|
+| `START_GAME`（房主） | `{examId?, subjectId?, random, count?, secondsPerQuestion}` | 所有人收到 `GAME_STARTED`（房主的帶 requestId） | `NOT_IN_ROOM`、`NOT_ROOM_OWNER`、`GAME_IN_PROGRESS`、`EXAM_NOT_FOUND`、`SUBJECT_NOT_FOUND`、`NO_QUESTIONS`、`INVALID_PAYLOAD` |
+| `SUBMIT_ANSWER` | `{gameId, index, selectedOptionIds?, trueFalseAnswer?}` | `ANSWER_ACCEPTED {gameId, index}` | `GAME_NOT_FOUND`、`WRONG_QUESTION`、`TIME_UP`、`ALREADY_ANSWERED` |
+| `END_GAME`（房主） | `{}` | 所有人收到 `GAME_OVER`（房主的帶 requestId，`reason: ENDED_BY_OWNER`） | `NOT_ROOM_OWNER`、`GAME_NOT_FOUND` |
+
+- `START_GAME`：`examId` 優先，否則 `subjectId`，兩者皆為 null 表示全部題庫。`random` 為 false 時依考卷順序（只在選考卷時有效）。`count` 1–100，null 時隨機為 10 題、依序為全部。`secondsPerQuestion` 必須是 10、20、30、60。只出已設定答案的題目。
+- 每題只能送一次；`index` 必須是目前這一題（`WRONG_QUESTION`）；截止後 0.5 秒以上才送達回 `TIME_UP`。
+
+伺服器推送（`requestId` 為 null，除非特別註明）：
+
+```json
+GAME_STARTED    {"gameId":"…","roomCode":"K7M2XQ","title":"期中考","questionCount":10,"secondsPerQuestion":20,
+                 "players":[UserInfo],"firstQuestionInMs":3000}
+GAME_QUESTION   {"gameId":"…","index":0,"total":10,"durationMs":20000,
+                 "question":{"index":0,"questionId":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?",
+                             "options":[{"id":90,"content":"1"},{"id":91,"content":"2"}],"groupId":null,"passage":null}}
+GAME_PROGRESS   {"gameId":"…","index":0,"answered":3,"players":5}
+QUESTION_RESULT {"gameId":"…","index":0,"total":10,"correctOptionIds":[91],"correctTrueFalse":null,"explanation":"…",
+                 "you":{"answered":true,"score":1.0,"correct":true,"points":1100,"bonus":100,"streak":2},
+                 "leaderboard":[LeaderboardEntry],"nextInMs":5000}
+LeaderboardEntry {"rank":1,"player":UserInfo,"score":3200,"correctCount":3,"streak":2,"lastPoints":1100}
+GAME_OVER       {"gameId":"…","title":"期中考","reason":"FINISHED","questionCount":10,"questionsPlayed":10,
+                 "leaderboard":[LeaderboardEntry],"wrongAdded":2}
+```
+
+- 流程：`GAME_STARTED` →（3 秒）→ `GAME_QUESTION` →（時間到，或所有人都作答）→ `QUESTION_RESULT` →（5 秒）→ 下一題 … → 最後一題的結果 5 秒後 `GAME_OVER`。
+- `GAME_QUESTION` **不含答案**；正確答案與解說在 `QUESTION_RESULT` 才送出。
+- `QUESTION_RESULT.you` 與 `GAME_OVER.wrongAdded` 每位玩家各自不同；`leaderboard` 依總分排序，同分同名次，只列仍在房間的玩家。
+- 計分：本題 `points` = 1000 × `score`（多選依學測規則部分給分）＋連續答對加成（第 2 題起每題 +100，最多 +500，只在全對時）。
+- `GAME_OVER.reason`：`FINISHED` | `ENDED_BY_OWNER`。`questionsPlayed` 為已公布結果的題數。
+- 競賽結束時，每位玩家沒有全對的題目加入錯題本；不寫入練習紀錄。
+- 競賽中：不能加入房間、不能移出玩家；玩家離開後不再出現在排行榜。房主離開或斷線時房間解散（`ROOM_CLOSED`），競賽中止，不送 `GAME_OVER`。
+
 ## 4. 錯誤碼
 
 | code | 說明 | 連線是否關閉 |
@@ -338,18 +397,26 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 | `ROOM_FULL` | 房間人數已達上限 | 否 |
 | `ALREADY_IN_ROOM` | 已在某個房間內 | 否 |
 | `NOT_IN_ROOM` | 不在任何房間 | 否 |
+| `NOT_ROOM_OWNER` | 只有房主可以這麼做（開始／結束競賽、移出玩家） | 否 |
+| `PLAYER_NOT_FOUND` | 房間裡沒有這位玩家 | 否 |
 | `SUBJECT_NOT_FOUND` | 分類不存在 | 否 |
 | `SUBJECT_EXISTS` | 分類名稱已存在 | 否 |
 | `EXAM_NOT_FOUND` | 考卷不存在 | 否 |
 | `QUESTION_NOT_FOUND` | 題目不存在或不屬於該考卷 | 否 |
 | `GROUP_NOT_FOUND` | 題組不存在，或這份考卷中沒有題目屬於這個題組（v0.7） | 否 |
 | `NOT_OWNER` | 不是考卷建立者，不能修改 | 否 |
+| `NOT_ADMIN` | 只有管理員可以下架考卷（v0.9） | 否 |
+| `EXAM_TAKEN_DOWN` | 考卷已被管理員下架，不能公開（v0.9） | 否 |
 | `TOO_MANY_QUESTIONS` | 一次匯入超過 200 題 | 否 |
 | `NO_QUESTIONS` | 沒有可以練習的題目（需已設定答案） | 否 |
 | `PRACTICE_NOT_FOUND` | 練習不存在、已交卷或已被新的練習取代 | 否 |
 | `ALREADY_ANSWERED` | 練習模式中重複作答同一題 | 否 |
 | `WRONG_MODE` | 考試模式不能逐題送出答案 | 否 |
 | `RECORD_NOT_FOUND` | 紀錄不存在或不是自己的 | 否 |
+| `GAME_IN_PROGRESS` | 競賽進行中（不能再開始、加入房間或移出玩家） | 否 |
+| `GAME_NOT_FOUND` | 目前沒有進行中的競賽，或你不是這場競賽的玩家 | 否 |
+| `WRONG_QUESTION` | 送出的答案不是目前這一題 | 否 |
+| `TIME_UP` | 這一題的作答時間已結束 | 否 |
 
 ## 5. 典型流程
 

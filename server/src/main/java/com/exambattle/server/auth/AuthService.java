@@ -46,6 +46,11 @@ public final class AuthService {
         return Optional.of(toInfo(user));
     }
 
+    /** 是否為管理員（第八階段，D-040）。 */
+    public boolean isAdmin(long userId) {
+        return users.findById(userId).map(UserRecord::admin).orElse(false);
+    }
+
     private static UserInfo toInfo(UserRecord user) {
         return new UserInfo(user.id(), user.username(), user.displayName());
     }

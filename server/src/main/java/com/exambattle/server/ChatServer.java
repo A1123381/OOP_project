@@ -112,6 +112,7 @@ public final class ChatServer implements AutoCloseable {
             LOG.log(Level.WARNING, "關閉 ServerSocket 失敗", e);
         }
         connections.forEach(ClientHandler::shutdown);
+        context.games().close();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

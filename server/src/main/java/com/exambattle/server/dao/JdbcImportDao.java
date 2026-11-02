@@ -26,7 +26,8 @@ public final class JdbcImportDao implements ImportDao {
             long target;
             if (newExam != null) {
                 try (PreparedStatement ps = c.prepareStatement(
-                        "INSERT INTO exams (title, subject_id, exam_year, exam_type, created_by) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO exams (title, subject_id, exam_year, exam_type, created_by, visibility)"
+                                + " VALUES (?, ?, ?, ?, ?, ?)",
                         Statement.RETURN_GENERATED_KEYS)) {
                     ps.setString(1, newExam.title());
                     ps.setLong(2, newExam.subjectId());
@@ -37,6 +38,7 @@ public final class JdbcImportDao implements ImportDao {
                     }
                     ps.setString(4, newExam.examType());
                     ps.setLong(5, newExam.ownerId());
+                    ps.setString(6, newExam.visibility().name());
                     ps.executeUpdate();
                     try (ResultSet keys = ps.getGeneratedKeys()) {
                         keys.next();

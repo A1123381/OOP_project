@@ -89,17 +89,17 @@ public final class PracticeService {
                 if (request.examId() == null) {
                     throw invalid("請選擇考卷");
                 }
-                title = examTitle(request.examId());
+                title = examTitle(request.examId(), userId);
                 sourceExamId = request.examId();
                 questions = repos.questions().findByExam(request.examId()).stream()
                         .filter(QuestionRecord::answerSet).toList();
             }
             case RANDOM -> {
                 List<Long> ids = new ArrayList<>(repos.questions().answeredIds(request.examId(),
-                        request.examId() == null ? request.subjectId() : null));
+                        request.examId() == null ? request.subjectId() : null, userId));
                 String scope;
                 if (request.examId() != null) {
-                    scope = examTitle(request.examId());
+                    scope = examTitle(request.examId(), userId);
                     sourceExamId = request.examId();
                 } else if (request.subjectId() != null) {
                     scope = subjectName(request.subjectId());
@@ -288,8 +288,10 @@ public final class PracticeService {
         return new AnswerData(index, selected, a.trueFalseAnswer());
     }
 
-    private String examTitle(long examId) throws PracticeException {
+    /** 考卷名稱；看不到的私人考卷視同不存在（D-039）。 */
+    private String examTitle(long examId, long userId) throws PracticeException {
         return repos.exams().findById(examId)
+                .filter(s -> s.exam().visibleTo(userId))
                 .map(s -> s.exam().title())
                 .orElseThrow(() -> new PracticeException(ErrorCode.EXAM_NOT_FOUND, "找不到考卷 #" + examId));
     }

@@ -51,7 +51,7 @@ public final class AuthHandler {
         if (user.isEmpty()) {
             throw new ProtocolException(ErrorCode.INVALID_CREDENTIALS, "帳號或密碼錯誤", message.requestId());
         }
-        if (!registry.tryLogin(session, user.get(), message.requestId())) {
+        if (!registry.tryLogin(session, user.get(), auth.isAdmin(user.get().userId()), message.requestId())) {
             throw new ProtocolException(ErrorCode.ALREADY_LOGGED_IN, "此帳號已在其他地方登入", message.requestId());
         }
     }

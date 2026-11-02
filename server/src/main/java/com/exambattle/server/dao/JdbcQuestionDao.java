@@ -118,7 +118,7 @@ public final class JdbcQuestionDao implements QuestionDao {
     }
 
     @Override
-    public List<Long> answeredIds(Long examId, Long subjectId) {
+    public List<Long> answeredIds(Long examId, Long subjectId, Long viewerId) {
         StringBuilder sql = new StringBuilder("""
                 SELECT DISTINCT q.id FROM questions q
                 JOIN exam_questions eq ON eq.question_id = q.id
@@ -134,12 +134,19 @@ public final class JdbcQuestionDao implements QuestionDao {
             sql.append(" AND e.subject_id = ?");
             filter = subjectId;
         }
+        if (viewerId != null) {
+            sql.append(" AND (e.created_by = ? OR (e.visibility = 'PUBLIC' AND e.taken_down = 0))");
+        }
         sql.append(" ORDER BY q.id");
         Long bound = filter;
         return database.run("查詢題目", c -> {
             try (PreparedStatement ps = c.prepareStatement(sql.toString())) {
+                int index = 1;
                 if (bound != null) {
-                    ps.setLong(1, bound);
+                    ps.setLong(index++, bound);
+                }
+                if (viewerId != null) {
+                    ps.setLong(index, viewerId);
                 }
                 try (ResultSet rs = ps.executeQuery()) {
                     List<Long> ids = new ArrayList<>();

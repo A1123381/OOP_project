@@ -789,6 +789,7 @@ final class ImportPane {
         toExisting.setDisable(mine.isEmpty());
 
         TextField title = new TextField(sourceName == null ? "" : sourceName.replaceAll("\\.[^.]+$", ""));
+        CheckBox makePublic = new CheckBox("公開（所有人都能瀏覽、練習、競賽；不勾選為私人）");
         ComboBox<SubjectInfo> subject = new ComboBox<>();
         subject.getItems().setAll(subjects);
         subject.setConverter(SubjectCells.CONVERTER);
@@ -821,9 +822,10 @@ final class ImportPane {
         form.addRow(2, new Label("　分類"), subject);
         form.addRow(3, new Label("　考試年份"), year);
         form.addRow(4, new Label("　考試類型"), type);
-        form.addRow(5, toExisting);
-        form.addRow(6, new Label("　考卷"), existing);
-        for (javafx.scene.Node n : List.of(title, subject, year, type)) {
+        form.add(makePublic, 1, 5);
+        form.addRow(6, toExisting);
+        form.addRow(7, new Label("　考卷"), existing);
+        for (javafx.scene.Node n : List.of(title, subject, year, type, makePublic)) {
             n.disableProperty().bind(toExisting.selectedProperty());
         }
         existing.disableProperty().bind(toNew.selectedProperty());
@@ -840,7 +842,8 @@ final class ImportPane {
                 error = Optional.of("請選擇考卷");
             }
             if (error.isEmpty()) {
-                ImportRequest request = buildRequest(toNew.isSelected(), title, subject, year, type, existing, questions);
+                ImportRequest request = buildRequest(toNew.isSelected(), title, subject, year, type, makePublic, existing,
+                        questions);
                 int length = MessageCodec.encode(Message.of(MessageType.IMPORT_QUESTIONS, "c-0", request)).length();
                 if (length > Protocol.MAX_LINE_CHARS - 100) {
                     error = Optional.of("這次匯入的內容太大，請減少勾選的題目分批匯入");
@@ -852,7 +855,7 @@ final class ImportPane {
             }
         });
         dialog.setResultConverter(b -> b == ButtonType.OK
-                ? buildRequest(toNew.isSelected(), title, subject, year, type, existing, questions) : null);
+                ? buildRequest(toNew.isSelected(), title, subject, year, type, makePublic, existing, questions) : null);
         dialog.showAndWait().ifPresent(request ->
                 session.call(MessageType.IMPORT_QUESTIONS, request, ImportDone.class, done -> {
                     selected.forEach(ImportItem::markImported);
@@ -868,11 +871,13 @@ final class ImportPane {
     }
 
     private static ImportRequest buildRequest(boolean toNew, TextField title, ComboBox<SubjectInfo> subject,
-                                              TextField year, TextField type, ComboBox<ExamSummary> existing,
-                                              ImportItem.RequestParts parts) {
+                                              TextField year, TextField type, CheckBox makePublic,
+                                              ComboBox<ExamSummary> existing, ImportItem.RequestParts parts) {
         if (toNew) {
             return new ImportRequest(null,
-                    new ExamDraft(title.getText(), subject.getValue(), year.getText(), type.getText()).toRequest(null),
+                    new ExamDraft(title.getText(), subject.getValue(), year.getText(), type.getText(),
+                            makePublic.isSelected() ? com.exambattle.common.protocol.bank.Visibility.PUBLIC
+                                    : com.exambattle.common.protocol.bank.Visibility.PRIVATE).toRequest(null),
                     parts.questions(), parts.groups(), parts.groupIndexes());
         }
         return new ImportRequest(existing.getValue().id(), null, parts.questions(), parts.groups(), parts.groupIndexes());

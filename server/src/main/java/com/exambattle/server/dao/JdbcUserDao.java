@@ -18,7 +18,7 @@ public final class JdbcUserDao implements UserDao {
             VALUES (?, ?, ?, ?, ?)""";
 
     private static final String SELECT_COLUMNS =
-            "SELECT id, username, display_name, password_hash, password_salt, password_iterations FROM users ";
+            "SELECT id, username, display_name, password_hash, password_salt, password_iterations, is_admin FROM users ";
 
     private final Database database;
 
@@ -80,7 +80,8 @@ public final class JdbcUserDao implements UserDao {
                             rs.getString("display_name"),
                             rs.getBytes("password_hash"),
                             rs.getBytes("password_salt"),
-                            rs.getInt("password_iterations")));
+                            rs.getInt("password_iterations"),
+                            rs.getBoolean("is_admin")));
                 }
             }
         });

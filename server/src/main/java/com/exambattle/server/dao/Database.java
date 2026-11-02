@@ -66,14 +66,20 @@ public final class Database {
                     }
                 }
             }
-            try (var rs = c.getMetaData().getColumns(c.getCatalog(), null, "questions", "group_id")) {
-                if (!rs.next()) {
-                    throw new DataAccessException("questions 資料表缺少 group_id 欄位，請執行 "
-                            + "db/migrations/001_question_groups.sql", null);
-                }
-            }
+            requireColumn(c, "questions", "group_id", "001_question_groups.sql");
+            requireColumn(c, "exams", "visibility", "002_visibility_admin.sql");
+            requireColumn(c, "users", "is_admin", "002_visibility_admin.sql");
         } catch (SQLException e) {
             throw new DataAccessException("無法連線到資料庫 " + config + "：" + e.getMessage(), e);
+        }
+    }
+
+    /** 升級後新增的欄位；缺少時提示要執行的 migration。 */
+    private static void requireColumn(Connection c, String table, String column, String migration) throws SQLException {
+        try (var rs = c.getMetaData().getColumns(c.getCatalog(), null, table, column)) {
+            if (!rs.next()) {
+                throw new DataAccessException(table + " 資料表缺少 " + column + " 欄位，請執行 db/migrations/" + migration, null);
+            }
         }
     }
 }

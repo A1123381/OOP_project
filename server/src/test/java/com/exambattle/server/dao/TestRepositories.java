@@ -7,9 +7,14 @@ public final class TestRepositories {
     }
 
     public static Repositories inMemory() {
+        return inMemory(new InMemoryUserDao());
+    }
+
+    /** 使用指定的帳號 DAO（例如需要設定管理員的測試）。 */
+    public static Repositories inMemory(UserDao users) {
         InMemoryBankDao bank = new InMemoryBankDao().withSeedSubjects();
         InMemoryPracticeDao practice = new InMemoryPracticeDao(bank);
-        return new Repositories(new InMemoryUserDao(), bank.subjects(), bank.exams(), bank.questions(),
+        return new Repositories(users, bank.subjects(), bank.exams(), bank.questions(),
                 practice, practice, bank.imports());
     }
 }

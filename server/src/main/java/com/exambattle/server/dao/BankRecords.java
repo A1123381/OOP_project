@@ -1,6 +1,7 @@
 package com.exambattle.server.dao;
 
 import com.exambattle.common.protocol.bank.QuestionType;
+import com.exambattle.common.protocol.bank.Visibility;
 
 import java.util.List;
 
@@ -14,12 +15,43 @@ public final class BankRecords {
     public record SubjectRecord(long id, String name) {
     }
 
-    /** exams 的一列。year、examType 可為 null。 */
-    public record ExamRecord(long id, String title, long subjectId, Integer year, String examType, long ownerId) {
+    /**
+     * exams 的一列。year、examType 可為 null。
+     * visibility、takenDown：公開範圍與管理員下架（第八階段，D-039、D-040）。
+     */
+    public record ExamRecord(long id, String title, long subjectId, Integer year, String examType, long ownerId,
+                             Visibility visibility, boolean takenDown) {
+
+        /** 公開、未下架的考卷。 */
+        public ExamRecord(long id, String title, long subjectId, Integer year, String examType, long ownerId) {
+            this(id, title, subjectId, year, examType, ownerId, Visibility.PUBLIC, false);
+        }
+
+        /** 這位使用者能不能看到（瀏覽、練習、競賽）：建立者，或公開且未下架。 */
+        public boolean visibleTo(long userId) {
+            return ownerId == userId || visibility == Visibility.PUBLIC && !takenDown;
+        }
     }
 
     /** 新增考卷用（尚未有 id）。 */
-    public record NewExam(String title, long subjectId, Integer year, String examType, long ownerId) {
+    public record NewExam(String title, long subjectId, Integer year, String examType, long ownerId,
+                          Visibility visibility) {
+
+        public NewExam(String title, long subjectId, Integer year, String examType, long ownerId) {
+            this(title, subjectId, year, examType, ownerId, Visibility.PUBLIC);
+        }
+    }
+
+    /**
+     * 考卷清單的條件（第八階段）。
+     *
+     * @param subjectId        null 表示全部分類
+     * @param keyword          搜尋考卷名稱、考試類型、年份、建立者帳號與名稱；null 表示不搜尋
+     * @param viewerId         只列出這位使用者看得到的考卷；null 表示不限制（管理工具、測試用）
+     * @param includeTakenDown 也列出被下架的考卷（管理員）
+     * @param mineOnly         只列出 viewerId 建立的考卷
+     */
+    public record ExamQuery(Long subjectId, String keyword, Long viewerId, boolean includeTakenDown, boolean mineOnly) {
     }
 
     /** 考卷加上題數統計。unansweredCount 為尚未設定正確答案的題目數。 */

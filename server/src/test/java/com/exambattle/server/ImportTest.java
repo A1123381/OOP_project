@@ -76,7 +76,7 @@ class ImportTest extends ServerTestBase {
 
     @Test
     void onlyOwnerCanImportIntoExistingExam() throws Exception {
-        long examId = owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, "老師的考卷", math, null, null),
+        long examId = owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, "老師的考卷", math, null, null, com.exambattle.common.protocol.bank.Visibility.PUBLIC),
                 MessageType.EXAM_SAVED).payloadAs(ExamSummary.class).id();
 
         other.expectError(MessageType.IMPORT_QUESTIONS, new ImportRequest(examId, null, List.of(single("x", 0))),

@@ -36,12 +36,24 @@ public final class Protocol {
     public static final int MAX_OPTION_CHARS = 1_000;
     public static final int MIN_OPTIONS = 2;
     public static final int MAX_OPTIONS = 10;
+    /** 考卷搜尋關鍵字的長度上限（第八階段）。 */
+    public static final int MAX_SEARCH_KEYWORD_CHARS = 50;
     /** 題組文章（閱讀測驗、克漏字），與 question_groups.passage 一致。 */
     public static final int MAX_PASSAGE_CHARS = 20_000;
 
     /** 單人練習的題數。 */
     public static final int DEFAULT_PRACTICE_COUNT = 10;
     public static final int MAX_PRACTICE_COUNT = 100;
+
+    /** 多人競賽（第四階段，D-037）。 */
+    public static final java.util.List<Integer> GAME_SECONDS_CHOICES = java.util.List.of(10, 20, 30, 60);
+    public static final int DEFAULT_GAME_COUNT = 10;
+    public static final int MAX_GAME_QUESTIONS = 100;
+    /** 每題基本分；多選題依學測規則乘上得分比例。 */
+    public static final int GAME_BASE_POINTS = 1000;
+    /** 連續答對加成：第 2 題起每多連續 1 題加 100 分，最多 500 分。 */
+    public static final int GAME_STREAK_STEP = 100;
+    public static final int GAME_STREAK_MAX_BONUS = 500;
 
     /** 一次 IMPORT_QUESTIONS 最多的題數。 */
     public static final int MAX_IMPORT_QUESTIONS = 200;

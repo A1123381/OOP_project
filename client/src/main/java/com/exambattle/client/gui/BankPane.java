@@ -20,6 +20,8 @@ import com.exambattle.common.protocol.bank.QuestionType;
 import com.exambattle.common.protocol.bank.ReorderRequest;
 import com.exambattle.common.protocol.bank.SubjectInfo;
 import com.exambattle.common.protocol.bank.SubjectList;
+import com.exambattle.common.protocol.bank.TakeDownRequest;
+import com.exambattle.common.protocol.bank.Visibility;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.BooleanBinding;
 import javafx.beans.property.ObjectProperty;
@@ -64,6 +66,9 @@ final class BankPane {
     private final TextArea preview = new TextArea();
     private final Label examTitle = new Label("請從左側選擇一份考卷");
     private final ObjectProperty<ExamDetail> detail = new SimpleObjectProperty<>();
+    // 搜尋（第八階段）
+    private final javafx.scene.control.TextField keyword = new javafx.scene.control.TextField();
+    private final javafx.scene.control.CheckBox mineOnly = new javafx.scene.control.CheckBox("只看我的");
     /** 目前考卷中的題組（標示依題目位置）。 */
     private List<QuestionGroups.Group> groups = List.of();
 
@@ -135,6 +140,7 @@ final class BankPane {
         exams.getColumns().add(column("建立者", 80, 60, e -> e.owner().displayName()));
         exams.getColumns().add(column("題數", 50, 50, e -> String.valueOf(e.questionCount())));
         exams.getColumns().add(column("未設答案", 75, 75, e -> e.unansweredCount() == 0 ? "" : String.valueOf(e.unansweredCount())));
+        exams.getColumns().add(column("公開範圍", 75, 60, BankPane::scope));
         exams.setPlaceholder(new Label("這個分類還沒有考卷"));
         exams.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         exams.getSelectionModel().selectedItemProperty().addListener((obs, before, after) -> loadDetail(after));
@@ -167,8 +173,51 @@ final class BankPane {
         edit.disableProperty().bind(notMine);
         delete.disableProperty().bind(notMine);
 
+        // 管理員：下架別人的公開考卷、解除下架（D-040）
+        Button takeDown = new Button("下架");
+        takeDown.setOnAction(e -> {
+            ExamSummary exam = exams.getSelectionModel().getSelectedItem();
+            if (Dialogs.confirm("確定要下架「" + exam.title() + "」嗎？下架後只有建立者看得到，且建立者不能再公開。")) {
+                session.call(MessageType.TAKE_DOWN_EXAM, new TakeDownRequest(exam.id(), true), ExamSummary.class,
+                        saved -> loadExams(saved.id()));
+            }
+        });
+        Button restore = new Button("解除下架");
+        restore.setOnAction(e -> {
+            ExamSummary exam = exams.getSelectionModel().getSelectedItem();
+            session.call(MessageType.TAKE_DOWN_EXAM, new TakeDownRequest(exam.id(), false), ExamSummary.class,
+                    saved -> loadExams(saved.id()));
+        });
+        for (Button b : List.of(takeDown, restore)) {
+            b.visibleProperty().bind(session.state().adminProperty());
+            b.managedProperty().bind(b.visibleProperty());
+        }
+        takeDown.disableProperty().bind(Bindings.createBooleanBinding(() -> {
+            ExamSummary s = exams.getSelectionModel().getSelectedItem();
+            return s == null || s.takenDown() || s.visibility() != Visibility.PUBLIC;
+        }, exams.getSelectionModel().selectedItemProperty()));
+        restore.disableProperty().bind(Bindings.createBooleanBinding(() -> {
+            ExamSummary s = exams.getSelectionModel().getSelectedItem();
+            return s == null || !s.takenDown();
+        }, exams.getSelectionModel().selectedItemProperty()));
+
+        keyword.setPromptText("搜尋考卷名稱、類型、年份、建立者");
+        keyword.setOnAction(e -> loadExams());
+        Button search = new Button("搜尋");
+        search.setOnAction(e -> loadExams());
+        Button clear = new Button("清除");
+        clear.setOnAction(e -> {
+            keyword.clear();
+            loadExams();
+        });
+        mineOnly.setOnAction(e -> loadExams());
+        javafx.scene.layout.HBox.setHgrow(keyword, Priority.ALWAYS);
+        javafx.scene.layout.HBox searchBar = new javafx.scene.layout.HBox(8, keyword, search, clear, mineOnly);
+        searchBar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
         VBox box = MainView.titled("考卷", exams);
-        box.getChildren().add(new FlowPane(8, 8, create, edit, delete, refresh));
+        box.getChildren().add(1, searchBar);
+        box.getChildren().add(new FlowPane(8, 8, create, edit, delete, refresh, takeDown, restore));
         return box;
     }
 
@@ -189,11 +238,16 @@ final class BankPane {
     private void loadExams(Long selectId) {
         SubjectInfo subject = subjects.getSelectionModel().getSelectedItem();
         Long subjectId = subject == null || subject == SubjectCells.ALL ? null : subject.id();
-        session.call(MessageType.LIST_EXAMS, new ListExamsRequest(subjectId), ExamList.class, list -> {
+        String text = keyword.getText() == null || keyword.getText().isBlank() ? null : keyword.getText().strip();
+        session.call(MessageType.LIST_EXAMS, new ListExamsRequest(subjectId, text, mineOnly.isSelected()), ExamList.class, list -> {
             exams.getItems().setAll(list.exams());
             list.exams().stream().filter(e -> selectId != null && e.id() == selectId).findFirst()
                     .ifPresentOrElse(e -> exams.getSelectionModel().select(e), () -> detail.set(null));
         });
+    }
+
+    private static String scope(ExamSummary e) {
+        return e.takenDown() ? "已下架" : e.visibility() == Visibility.PUBLIC ? "公開" : "私人";
     }
 
     private boolean isMine(ExamSummary exam) {
@@ -289,7 +343,8 @@ final class BankPane {
     }
 
     private static String describe(ExamSummary exam) {
-        StringBuilder text = new StringBuilder(exam.title()).append("\n").append(exam.subject().name());
+        StringBuilder text = new StringBuilder(exam.title()).append("\n").append(exam.subject().name())
+                .append("・").append(scope(exam));
         if (exam.year() != null) {
             text.append("・").append(exam.year());
         }

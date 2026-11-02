@@ -1,5 +1,7 @@
 package com.exambattle.server.dao;
 
+import com.exambattle.common.protocol.bank.Visibility;
+import com.exambattle.server.dao.BankRecords.ExamQuery;
 import com.exambattle.server.dao.BankRecords.ExamRecord;
 import com.exambattle.server.dao.BankRecords.ExamStats;
 import com.exambattle.server.dao.BankRecords.NewExam;
@@ -19,7 +21,7 @@ public final class JdbcExamDao implements ExamDao {
 
     /** 考卷與題數統計；「未設答案」的判斷與 QuestionRecord.answerSet() 一致。 */
     private static final String SELECT_STATS = """
-            SELECT e.id, e.title, e.subject_id, e.exam_year, e.exam_type, e.created_by,
+            SELECT e.id, e.title, e.subject_id, e.exam_year, e.exam_type, e.created_by, e.visibility, e.taken_down,
                    COUNT(q.id) AS question_count,
                    COALESCE(SUM(CASE
                        WHEN q.id IS NULL THEN 0
@@ -33,7 +35,8 @@ public final class JdbcExamDao implements ExamDao {
             """;
 
     private static final String GROUP_BY = """
-             GROUP BY e.id, e.title, e.subject_id, e.exam_year, e.exam_type, e.created_by, e.created_at
+             GROUP BY e.id, e.title, e.subject_id, e.exam_year, e.exam_type, e.created_by, e.visibility, e.taken_down,
+                      e.created_at
             """;
 
     private final Database database;
@@ -46,18 +49,20 @@ public final class JdbcExamDao implements ExamDao {
     public ExamRecord create(NewExam exam) {
         return database.run("新增考卷", c -> {
             try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO exams (title, subject_id, exam_year, exam_type, created_by) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO exams (title, subject_id, exam_year, exam_type, visibility, created_by)"
+                            + " VALUES (?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, exam.title());
                 ps.setLong(2, exam.subjectId());
                 setNullableInt(ps, 3, exam.year());
                 ps.setString(4, exam.examType());
-                ps.setLong(5, exam.ownerId());
+                ps.setString(5, exam.visibility().name());
+                ps.setLong(6, exam.ownerId());
                 ps.executeUpdate();
                 try (ResultSet keys = ps.getGeneratedKeys()) {
                     keys.next();
                     return new ExamRecord(keys.getLong(1), exam.title(), exam.subjectId(), exam.year(),
-                            exam.examType(), exam.ownerId());
+                            exam.examType(), exam.ownerId(), exam.visibility(), false);
                 }
             }
         });
@@ -67,12 +72,15 @@ public final class JdbcExamDao implements ExamDao {
     public void update(ExamRecord exam) {
         database.run("更新考卷", c -> {
             try (PreparedStatement ps = c.prepareStatement(
-                    "UPDATE exams SET title = ?, subject_id = ?, exam_year = ?, exam_type = ? WHERE id = ?")) {
+                    "UPDATE exams SET title = ?, subject_id = ?, exam_year = ?, exam_type = ?, visibility = ?,"
+                            + " taken_down = ? WHERE id = ?")) {
                 ps.setString(1, exam.title());
                 ps.setLong(2, exam.subjectId());
                 setNullableInt(ps, 3, exam.year());
                 ps.setString(4, exam.examType());
-                ps.setLong(5, exam.id());
+                ps.setString(5, exam.visibility().name());
+                ps.setBoolean(6, exam.takenDown());
+                ps.setLong(7, exam.id());
                 return ps.executeUpdate();
             }
         });
@@ -128,13 +136,40 @@ public final class JdbcExamDao implements ExamDao {
     }
 
     @Override
-    public List<ExamStats> list(Long subjectId) {
-        String sql = SELECT_STATS + (subjectId == null ? "" : " WHERE e.subject_id = ?") + GROUP_BY
+    public List<ExamStats> list(ExamQuery query) {
+        List<String> where = new ArrayList<>();
+        List<Object> params = new ArrayList<>();
+        if (query.subjectId() != null) {
+            where.add("e.subject_id = ?");
+            params.add(query.subjectId());
+        }
+        if (query.viewerId() != null) {
+            if (query.mineOnly()) {
+                where.add("e.created_by = ?");
+                params.add(query.viewerId());
+            } else {
+                where.add("(e.created_by = ? OR (e.visibility = 'PUBLIC' AND e.taken_down = 0)"
+                        + (query.includeTakenDown() ? " OR e.taken_down = 1" : "") + ")");
+                params.add(query.viewerId());
+            }
+        }
+        if (query.keyword() != null && !query.keyword().isBlank()) {
+            // 建立者以子查詢比對，不影響題數統計的 JOIN
+            where.add("""
+                    (e.title LIKE ? ESCAPE '!' OR e.exam_type LIKE ? ESCAPE '!' OR CAST(e.exam_year AS CHAR) LIKE ? ESCAPE '!'
+                     OR EXISTS (SELECT 1 FROM users u WHERE u.id = e.created_by
+                                AND (u.username LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!')))""");
+            String pattern = "%" + query.keyword().strip().replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+            for (int i = 0; i < 5; i++) {
+                params.add(pattern);
+            }
+        }
+        String sql = SELECT_STATS + (where.isEmpty() ? "" : " WHERE " + String.join(" AND ", where)) + GROUP_BY
                 + " ORDER BY e.created_at DESC, e.id DESC";
         return database.run("查詢考卷", c -> {
             try (PreparedStatement ps = c.prepareStatement(sql)) {
-                if (subjectId != null) {
-                    ps.setLong(1, subjectId);
+                for (int i = 0; i < params.size(); i++) {
+                    ps.setObject(i + 1, params.get(i));
                 }
                 try (ResultSet rs = ps.executeQuery()) {
                     List<ExamStats> exams = new ArrayList<>();
@@ -151,7 +186,8 @@ public final class JdbcExamDao implements ExamDao {
         int year = rs.getInt("exam_year");
         Integer nullableYear = rs.wasNull() ? null : year;
         ExamRecord exam = new ExamRecord(rs.getLong("id"), rs.getString("title"), rs.getLong("subject_id"),
-                nullableYear, rs.getString("exam_type"), rs.getLong("created_by"));
+                nullableYear, rs.getString("exam_type"), rs.getLong("created_by"),
+                Visibility.valueOf(rs.getString("visibility")), rs.getBoolean("taken_down"));
         return new ExamStats(exam, rs.getInt("question_count"), rs.getInt("unanswered_count"));
     }
 

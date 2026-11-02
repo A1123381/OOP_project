@@ -30,10 +30,14 @@ abstract class ServerTestBase {
     }
 
     void restartServer(ServerConfig config) throws Exception {
+        restartServer(config, TestRepositories.inMemory());
+    }
+
+    void restartServer(ServerConfig config, com.exambattle.server.dao.Repositories repos) throws Exception {
         if (server != null) {
             server.close();
         }
-        server = new ChatServer(config, TestRepositories.inMemory());
+        server = new ChatServer(config, repos);
         server.start();
     }
 

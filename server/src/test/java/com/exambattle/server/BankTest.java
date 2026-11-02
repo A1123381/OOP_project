@@ -253,7 +253,7 @@ class BankTest extends ServerTestBase {
 
     private static ExamSummary createExam(TestClient c, String title, long subjectId, Integer year, String type)
             throws Exception {
-        return c.request(MessageType.CREATE_EXAM, new ExamRequest(null, title, subjectId, year, type),
+        return c.request(MessageType.CREATE_EXAM, new ExamRequest(null, title, subjectId, year, type, com.exambattle.common.protocol.bank.Visibility.PUBLIC),
                 MessageType.EXAM_SAVED).payloadAs(ExamSummary.class);
     }
 

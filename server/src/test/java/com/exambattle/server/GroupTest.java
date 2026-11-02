@@ -169,7 +169,7 @@ class GroupTest extends ServerTestBase {
     // ---------- 輔助方法
 
     private long newExam(String title) throws Exception {
-        return owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, title, math, null, null),
+        return owner.request(MessageType.CREATE_EXAM, new ExamRequest(null, title, math, null, null, com.exambattle.common.protocol.bank.Visibility.PUBLIC),
                 MessageType.EXAM_SAVED).payloadAs(ExamSummary.class).id();
     }
 

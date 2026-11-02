@@ -21,9 +21,15 @@ public interface QuestionDao {
     List<QuestionRecord> findByIds(List<Long> questionIds);
 
     /**
-     * 已設定答案的題目 id（練習用）。examId 優先；兩者皆為 null 表示全部題庫。
+     * 已設定答案的題目 id（練習、競賽用）。examId 優先；兩者皆為 null 表示全部題庫。
+     * viewerId 不為 null 時只取這位使用者看得到的考卷中的題目（第八階段）。
      */
-    List<Long> answeredIds(Long examId, Long subjectId);
+    List<Long> answeredIds(Long examId, Long subjectId, Long viewerId);
+
+    /** 不限可見範圍。 */
+    default List<Long> answeredIds(Long examId, Long subjectId) {
+        return answeredIds(examId, subjectId, null);
+    }
 
     /** 考卷中的題目，依考卷內的順序。 */
     List<QuestionRecord> findByExam(long examId);

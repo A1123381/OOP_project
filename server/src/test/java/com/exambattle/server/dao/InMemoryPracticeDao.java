@@ -48,18 +48,22 @@ public final class InMemoryPracticeDao implements PracticeDao, WrongQuestionDao 
                     a.correct(), a.answeredAt()));
         }
         records.put(id, new RecordDetail(row, List.copyOf(answers)));
+        add(r.userId(), wrongQuestionIds, r.finishedAt());
+        return id;
+    }
 
-        Map<Long, Wrong> book = wrongs.computeIfAbsent(r.userId(), k -> new LinkedHashMap<>());
-        for (long questionId : wrongQuestionIds) {
+    @Override
+    public synchronized void add(long userId, List<Long> questionIds, java.time.Instant at) {
+        Map<Long, Wrong> book = wrongs.computeIfAbsent(userId, k -> new LinkedHashMap<>());
+        for (long questionId : questionIds) {
             if (!bank.questionExists(questionId)) {
                 continue;
             }
             Wrong old = book.get(questionId);
             book.put(questionId, old == null
-                    ? new Wrong(questionId, 1, r.finishedAt(), r.finishedAt())
-                    : new Wrong(questionId, old.count() + 1, old.first(), r.finishedAt()));
+                    ? new Wrong(questionId, 1, at, at)
+                    : new Wrong(questionId, old.count() + 1, old.first(), at));
         }
-        return id;
     }
 
     @Override

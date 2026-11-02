@@ -1,0 +1,42 @@
+/* Exam Battle 客戶端的共用外觀（第八階段）。字型與字級由 ExamBattleApp 設定在根節點上。 */
+.root {
+    -fx-accent: #1565c0;
+    -fx-focus-color: #1565c0;
+    -fx-faint-focus-color: #1565c022;
+    -fx-base: #f7f8fa;
+    -fx-background-color: #f4f6f9;
+}
+
+.button {
+    -fx-background-radius: 4;
+    -fx-padding: 0.35em 0.9em;
+}
+
+.button:default {
+    -fx-base: #1e88e5;
+    -fx-text-fill: white;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab {
+    -fx-padding: 0.3em 1.1em;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .tab-label {
+    -fx-font-weight: bold;
+}
+
+.table-view .column-header .label {
+    -fx-font-weight: bold;
+}
+
+.list-cell, .table-row-cell {
+    -fx-cell-size: 2.1em;
+}
+
+.titled-pane > .title {
+    -fx-font-weight: bold;
+}
+
+.text-area, .text-field, .combo-box, .spinner {
+    -fx-background-radius: 3;
+}

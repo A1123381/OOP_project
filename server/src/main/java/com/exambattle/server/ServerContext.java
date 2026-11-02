@@ -9,6 +9,8 @@ import com.exambattle.server.dao.Repositories;
 import com.exambattle.server.handler.BankHandler;
 import com.exambattle.server.handler.AuthHandler;
 import com.exambattle.server.handler.ChatHandler;
+import com.exambattle.server.handler.GameHandler;
+import com.exambattle.server.game.GameManager;
 import com.exambattle.server.handler.PracticeHandler;
 import com.exambattle.server.handler.RoomHandler;
 import com.exambattle.server.practice.PracticeService;
@@ -22,19 +24,21 @@ import java.time.Clock;
  */
 record ServerContext(Object lock, ClientRegistry registry, RoomManager rooms,
                      AuthHandler auth, RoomHandler roomHandler, ChatHandler chat, BankHandler bank,
-                     PracticeHandler practice) {
+                     PracticeHandler practice, GameManager games, GameHandler game) {
 
     static ServerContext create(ServerConfig config, Repositories repos, Clock clock) {
         Object lock = new Object();
         ClientRegistry registry = new ClientRegistry(lock);
         RoomManager rooms = new RoomManager(lock, new RoomCodeGenerator(), config.maxRoomPlayers());
         AuthService authService = new AuthService(repos.users(), new PasswordHasher(config.passwordIterations()));
+        GameManager games = new GameManager(rooms, repos, config.gameTiming(), clock);
         return new ServerContext(lock, registry, rooms,
                 new AuthHandler(authService, registry),
                 new RoomHandler(rooms),
                 new ChatHandler(lock, registry, rooms, clock),
                 new BankHandler(new SubjectService(repos.subjects()), new ExamService(repos)),
-                new PracticeHandler(new PracticeService(repos, clock)));
+                new PracticeHandler(new PracticeService(repos, clock)),
+                games, new GameHandler(games));
     }
 
     /** 連線結束：清除進行中的練習，先離開房間（通知同房的人），再離線（通知所有已登入者）。 */

@@ -1,5 +1,6 @@
 package com.exambattle.server.dao;
 
+import com.exambattle.server.dao.BankRecords.ExamQuery;
 import com.exambattle.server.dao.BankRecords.ExamRecord;
 import com.exambattle.server.dao.BankRecords.ExamStats;
 import com.exambattle.server.dao.BankRecords.NewExam;
@@ -119,7 +120,7 @@ public final class InMemoryBankDao {
             synchronized (InMemoryBankDao.this) {
                 long id = nextId++;
                 ExamRecord record = new ExamRecord(id, exam.title(), exam.subjectId(), exam.year(), exam.examType(),
-                        exam.ownerId());
+                        exam.ownerId(), exam.visibility(), false);
                 exams.put(id, record);
                 examQuestions.put(id, new ArrayList<>());
                 return record;
@@ -153,10 +154,14 @@ public final class InMemoryBankDao {
         }
 
         @Override
-        public List<ExamStats> list(Long subjectId) {
+        public List<ExamStats> list(ExamQuery q) {
             synchronized (InMemoryBankDao.this) {
+                String keyword = q.keyword() == null || q.keyword().isBlank() ? null : q.keyword().strip().toLowerCase(Locale.ROOT);
                 return exams.values().stream()
-                        .filter(e -> subjectId == null || e.subjectId() == subjectId)
+                        .filter(e -> q.subjectId() == null || e.subjectId() == q.subjectId())
+                        .filter(e -> q.viewerId() == null || (q.mineOnly() ? e.ownerId() == q.viewerId()
+                                : e.visibleTo(q.viewerId()) || q.includeTakenDown() && e.takenDown()))
+                        .filter(e -> keyword == null || matches(e, keyword))
                         .sorted(Comparator.comparingLong(ExamRecord::id).reversed())
                         .map(InMemoryBankDao.this::stats)
                         .toList();
@@ -203,11 +208,12 @@ public final class InMemoryBankDao {
         }
 
         @Override
-        public List<Long> answeredIds(Long examId, Long subjectId) {
+        public List<Long> answeredIds(Long examId, Long subjectId, Long viewerId) {
             synchronized (InMemoryBankDao.this) {
                 return examQuestions.entrySet().stream()
                         .filter(e -> examId != null ? e.getKey().equals(examId)
                                 : subjectId == null || exams.get(e.getKey()).subjectId() == subjectId)
+                        .filter(e -> viewerId == null || exams.get(e.getKey()).visibleTo(viewerId))
                         .flatMap(e -> e.getValue().stream())
                         .distinct()
                         .filter(id -> questions.get(id).answerSet())
@@ -309,6 +315,13 @@ public final class InMemoryBankDao {
         if (!used) {
             questions.remove(questionId);
         }
+    }
+
+    /** 搜尋考卷名稱、類型、年份。記憶體版不比對建立者名稱（建立者搜尋由 JdbcBankDaoTest 驗證）。 */
+    private static boolean matches(ExamRecord e, String keyword) {
+        return e.title().toLowerCase(Locale.ROOT).contains(keyword)
+                || e.examType() != null && e.examType().toLowerCase(Locale.ROOT).contains(keyword)
+                || e.year() != null && String.valueOf(e.year()).contains(keyword);
     }
 
     private void deleteEmptyGroups() {

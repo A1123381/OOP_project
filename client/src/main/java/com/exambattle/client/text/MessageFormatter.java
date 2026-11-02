@@ -3,6 +3,11 @@ package com.exambattle.client.text;
 import com.exambattle.common.protocol.Message;
 import com.exambattle.common.protocol.MessageType;
 import com.exambattle.common.protocol.ProtocolException;
+import com.exambattle.common.protocol.game.GameEndReason;
+import com.exambattle.common.protocol.game.GameOver;
+import com.exambattle.common.protocol.game.GameStarted;
+import com.exambattle.common.protocol.game.Kicked;
+import com.exambattle.common.protocol.game.LeaderboardEntry;
 import com.exambattle.common.protocol.payload.ByePayload;
 import com.exambattle.common.protocol.payload.ChatBroadcast;
 import com.exambattle.common.protocol.payload.ClientLeftPayload;
@@ -62,6 +67,12 @@ public final class MessageFormatter {
                 ErrorPayload error = message.payloadAs(ErrorPayload.class);
                 yield "! 錯誤 [" + error.code() + "] " + error.message();
             }
+            case GAME_STARTED -> {
+                GameStarted g = message.payloadAs(GameStarted.class);
+                yield "* 競賽開始：" + g.title() + "（" + g.questionCount() + " 題，每題 " + g.secondsPerQuestion() + " 秒）";
+            }
+            case GAME_OVER -> gameOver(message.payloadAs(GameOver.class));
+            case KICKED -> "* 你被房主移出房間 " + message.payloadAs(Kicked.class).roomCode() + "，已回到大廳";
             case BYE -> {
                 String reason = message.payloadAs(ByePayload.class).reason();
                 yield "* 伺服器結束連線" + (reason == null ? "" : "（" + reason + "）");
@@ -71,7 +82,8 @@ public final class MessageFormatter {
                  LIST_SUBJECTS, SUBJECTS, CREATE_SUBJECT, SUBJECT_SAVED, LIST_EXAMS, EXAMS, GET_EXAM, EXAM_DETAIL,
                  CREATE_EXAM, UPDATE_EXAM, EXAM_SAVED, DELETE_EXAM, EXAM_DELETED, ADD_QUESTION, UPDATE_QUESTION,
                  QUESTION_SAVED, DELETE_QUESTION, QUESTION_DELETED, REORDER_QUESTIONS, IMPORT_QUESTIONS, IMPORT_DONE,
-                 UPDATE_GROUP, GROUP_SAVED,
+                 UPDATE_GROUP, GROUP_SAVED, TAKE_DOWN_EXAM, START_GAME, GAME_QUESTION, SUBMIT_ANSWER, ANSWER_ACCEPTED, GAME_PROGRESS,
+                 QUESTION_RESULT, END_GAME, KICK_PLAYER,
                  START_PRACTICE, PRACTICE_STARTED, ANSWER_QUESTION, ANSWER_RESULT, SUBMIT_PRACTICE, PRACTICE_RESULT,
                  LIST_RECORDS, RECORDS, GET_RECORD, LIST_WRONG, WRONG_LIST, REMOVE_WRONG, WRONG_REMOVED -> null;
         };
@@ -115,8 +127,19 @@ public final class MessageFormatter {
         String why = switch (left.reason()) {
             case LEFT -> "離開了房間";
             case DISCONNECTED -> "斷線，已離開房間";
+            case KICKED -> "被房主移出房間";
         };
         return "* " + label(left.player()) + " " + why;
+    }
+
+    private static String gameOver(GameOver over) {
+        StringBuilder text = new StringBuilder("* 競賽結束：").append(over.title())
+                .append(over.reason() == GameEndReason.ENDED_BY_OWNER ? "（房主提前結束）" : "");
+        for (LeaderboardEntry e : over.leaderboard()) {
+            text.append("\n    第 ").append(e.rank()).append(" 名 ").append(label(e.player()))
+                    .append(" ").append(e.score()).append(" 分");
+        }
+        return text.toString();
     }
 
     private static String roomClosed(RoomClosed closed) {

@@ -3,14 +3,12 @@ package com.exambattle.client.gui;
 import com.exambattle.common.protocol.MessageType;
 import com.exambattle.common.protocol.payload.ChatRequest;
 import com.exambattle.common.protocol.payload.JoinRoomRequest;
-import com.exambattle.common.protocol.payload.LeftRoom;
 import com.exambattle.common.protocol.payload.RoomState;
 import com.exambattle.common.protocol.payload.UserInfo;
 import javafx.beans.binding.Bindings;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -24,7 +22,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
-/** 主視窗：上方顯示登入者與位置，分頁為大廳、房間、題庫。 */
+/** 主視窗：上方顯示登入者與位置，分頁為大廳、房間（競賽）、題庫、練習、紀錄、錯題本、匯入。 */
 final class MainView {
 
     private final GuiSession session;
@@ -45,12 +43,22 @@ final class MainView {
             return me == null ? "" : me.displayName() + "（" + me.username() + "）　目前位置：" + where;
         }, state.meProperty(), state.roomProperty()));
         who.setStyle("-fx-font-weight: bold;");
-        HBox top = new HBox(who);
+        Label adminBadge = new Label("【管理員】");
+        adminBadge.setStyle("-fx-text-fill: #c62828; -fx-font-weight: bold;");
+        adminBadge.visibleProperty().bind(state.adminProperty());
+        adminBadge.managedProperty().bind(adminBadge.visibleProperty());
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Label keys = new Label("Ctrl+1–7 切換分頁　Ctrl+＋／－ 調整字級　Ctrl+0 還原");
+        keys.setStyle("-fx-text-fill: #667;");
+        HBox top = new HBox(10, who, adminBadge, spacer, keys);
+        top.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         top.setPadding(new Insets(10, 14, 10, 14));
         top.setStyle("-fx-background-color: #eef2f7;");
 
         Tab lobbyTab = new Tab("大廳", lobby());
-        roomTab.setContent(room());
+        // 房間與多人競賽（第四階段）
+        roomTab.setContent(new RoomPane(session, chatBox(state.roomChat())).root());
         Tab bankTab = new Tab("題庫", new BankPane(session).root());
 
         // 單人練習、紀錄、錯題本（第五階段）；切換到分頁時重新載入資料
@@ -84,6 +92,21 @@ final class MainView {
         Tab importTab = new Tab("匯入", new ImportPane(session).root());
         tabs.getTabs().addAll(lobbyTab, roomTab, bankTab, practiceTab, recordsTab, wrongTab, importTab);
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        // 快速鍵：Ctrl+1–7 切換分頁（第八階段）
+        for (int i = 0; i < tabs.getTabs().size(); i++) {
+            tabs.getTabs().get(i).setTooltip(new javafx.scene.control.Tooltip("Ctrl+" + (i + 1)));
+        }
+        root.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            javafx.scene.input.KeyCode code = e.getCode();
+            if (e.isShortcutDown() && code.compareTo(javafx.scene.input.KeyCode.DIGIT1) >= 0
+                    && code.compareTo(javafx.scene.input.KeyCode.DIGIT9) <= 0) {
+                int index = code.ordinal() - javafx.scene.input.KeyCode.DIGIT1.ordinal();
+                if (index >= 0 && index < tabs.getTabs().size() && !tabs.getTabs().get(index).isDisabled()) {
+                    tabs.getSelectionModel().select(index);
+                    e.consume();
+                }
+            }
+        });
         roomTab.disableProperty().bind(state.roomProperty().isNull());
         state.roomProperty().addListener((obs, before, after) -> {
             if (before == null && after != null) {
@@ -135,60 +158,6 @@ final class MainView {
         pane.setLeft(left);
         pane.setCenter(titled("大廳聊天（只有大廳的人看得到）", chatBox(state.lobbyChat())));
         pane.setRight(right);
-        return pane;
-    }
-
-    private Parent room() {
-        Label header = new Label();
-        header.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
-        header.textProperty().bind(Bindings.createStringBinding(() -> {
-            RoomState r = state.roomProperty().get();
-            return r == null ? "尚未進入房間"
-                    : "房間代碼 " + r.roomCode() + "（" + r.players().size() + "/" + r.maxPlayers() + " 人）";
-        }, state.roomProperty()));
-
-        ListView<UserInfo> players = new ListView<>();
-        state.roomProperty().addListener((obs, before, after) ->
-                players.getItems().setAll(after == null ? java.util.List.of() : after.players()));
-        players.setCellFactory(v -> new ListCell<>() {
-            @Override
-            protected void updateItem(UserInfo user, boolean empty) {
-                super.updateItem(user, empty);
-                if (empty || user == null) {
-                    setText(null);
-                    return;
-                }
-                RoomState r = state.roomProperty().get();
-                String text = user.displayName() + "（" + user.username() + "）";
-                if (r != null && r.ownerUserId() == user.userId()) {
-                    text += "【房主】";
-                }
-                if (state.me() != null && state.me().userId() == user.userId()) {
-                    text += "（你）";
-                }
-                setText(text);
-            }
-        });
-        players.setPrefWidth(300);
-
-        Button leave = new Button("離開房間");
-        leave.setOnAction(e -> {
-            RoomState r = state.roomProperty().get();
-            boolean owner = r != null && state.me() != null && r.ownerUserId() == state.me().userId();
-            if (!owner || Dialogs.confirm("你是房主，離開後房間會解散。確定要離開嗎？")) {
-                session.call(MessageType.LEAVE_ROOM, null, LeftRoom.class, left -> { });
-            }
-        });
-        Label hint = new Label("房主離開或斷線時房間會解散。競賽功能將於第四階段加入。");
-        hint.setStyle("-fx-text-fill: #555;");
-        HBox top = new HBox(16, header, leave, hint);
-        top.setAlignment(Pos.CENTER_LEFT);
-        top.setPadding(new Insets(10));
-
-        BorderPane pane = new BorderPane();
-        pane.setTop(top);
-        pane.setLeft(titled("房間玩家", players));
-        pane.setCenter(titled("房間聊天（只有同房玩家看得到）", chatBox(state.roomChat())));
         return pane;
     }
 

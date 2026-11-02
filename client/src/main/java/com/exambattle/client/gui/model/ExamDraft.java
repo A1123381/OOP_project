@@ -3,15 +3,21 @@ package com.exambattle.client.gui.model;
 import com.exambattle.common.protocol.Protocol;
 import com.exambattle.common.protocol.bank.ExamRequest;
 import com.exambattle.common.protocol.bank.SubjectInfo;
+import com.exambattle.common.protocol.bank.Visibility;
 
 import java.util.Optional;
 
 /**
  * 考卷表單的內容。檢查規則與伺服器相同，只為了提早提示；最終以伺服器為準。
  *
- * @param yearText 使用者輸入的年份文字，可空白
+ * @param yearText   使用者輸入的年份文字，可空白
+ * @param visibility 公開範圍；null 表示新增時私人、編輯時不變（第八階段）
  */
-public record ExamDraft(String title, SubjectInfo subject, String yearText, String examType) {
+public record ExamDraft(String title, SubjectInfo subject, String yearText, String examType, Visibility visibility) {
+
+    public ExamDraft(String title, SubjectInfo subject, String yearText, String examType) {
+        this(title, subject, yearText, examType, null);
+    }
 
     /** 回傳第一個錯誤訊息；沒有錯誤時為 empty。 */
     public Optional<String> validate() {
@@ -45,7 +51,7 @@ public record ExamDraft(String title, SubjectInfo subject, String yearText, Stri
     public ExamRequest toRequest(Long examId) {
         Integer year = isBlank(yearText) ? null : Integer.parseInt(yearText.strip());
         String type = isBlank(examType) ? null : examType.strip();
-        return new ExamRequest(examId, title.strip(), subject.id(), year, type);
+        return new ExamRequest(examId, title.strip(), subject.id(), year, type, visibility);
     }
 
     private static boolean isBlank(String s) {

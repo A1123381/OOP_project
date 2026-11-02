@@ -39,7 +39,7 @@ final class BankValidator {
             throw BankException.invalid("考試年份必須介於 " + Protocol.MIN_EXAM_YEAR + "–" + Protocol.MAX_EXAM_YEAR);
         }
         String examType = optionalText(request.examType(), Protocol.MAX_EXAM_TYPE_CHARS, "考試類型");
-        return new ExamRequest(request.examId(), title, request.subjectId(), year, examType);
+        return new ExamRequest(request.examId(), title, request.subjectId(), year, examType, request.visibility());
     }
 
     /** 驗證題目並轉成要寫入資料庫的內容。 */

@@ -8,11 +8,15 @@
 - 第一階段：基本通訊，已驗收。
 - 第二階段：使用者及房間，已驗收。
 - 第三階段：基本題庫 + JavaFX 客戶端，已驗收。
-- 第四階段：多人競賽，**延後**（使用者決定先做單人功能，D-022）。
+- 第四階段：多人競賽，已驗收。內容包括：
+  - 伺服器 `game` 套件：房主開始、同步出題、伺服器計時（10／20／30／60 秒）、判分、計分（答對 1000＋連續答對加成，不看速度）、排行榜（D-037）
+  - 房主移出玩家（競賽開始前，D-038）；競賽中不能加入或移出
+  - 答錯的題目加入錯題本（不存練習紀錄）；協定 v0.8
+  - 客戶端 `RoomPane`：競賽設定、作答與倒數、每題結果、最終排行榜
 - 第五階段：單人練習、紀錄、個人成績、錯題本，已驗收。
 - 第六階段：考卷匯入，已驗收。
 - 第七階段：OCR 校正與匯入題庫，已驗收。
-- **題組支援（閱讀測驗、克漏字、文意選填、篇章結構），已實作，等待使用者驗收。** 內容包括：
+- 題組支援（閱讀測驗、克漏字、文意選填、篇章結構），已驗收。內容包括：
   - 資料表 `question_groups`、`questions.group_id`；既有資料庫執行 `db/migrations/001_question_groups.sql`（D-034）
   - 協定 v0.7：`QuestionData`／`PracticeQuestion` 帶 `groupId`、`passage`；`UPDATE_GROUP`；匯入帶 `groups`、`groupIndexes`
   - 切題改寫：頁首頁尾、大題標題、題組標題、三種題組、空格標記【N】、非選擇題（D-035）；輸出 `SplitResult`
@@ -52,7 +56,13 @@
   - 協定 v0.3
 
 使用手冊見 [docs/MANUAL.md](docs/MANUAL.md)，測試方法見 [docs/TESTING.md](docs/TESTING.md)，資料庫設定見 [docs/DATABASE.md](docs/DATABASE.md)。
-下一步由使用者決定（延後的第四階段多人競賽，或第八階段系統完善），須等使用者確認後才開始。
+- 第八階段：系統完善，已驗收。內容包括：
+  - 公開／私人考卷（新建預設私人，既有維持公開；別人的私人考卷視同不存在，D-039）
+  - 管理員只有下架權，`users.is_admin` 只能用 SQL 設定（D-040）；`TAKE_DOWN_EXAM`
+  - 考卷搜尋（名稱、類型、年份、建立者）與「只看我的」；介面：`app.css`、字級 Ctrl＋＋／－／0、Ctrl+1–7 切換分頁（D-041）
+  - 既有資料庫執行 `db/migrations/002_visibility_admin.sql`；協定 v0.9
+
+**1.0.0 已發行**（D-042）：發行版在 `dist/exam-battle-1.0.0/` 與 `dist/exam-battle-1.0.0.zip`（不進版本控制）。所有規劃的階段都已完成；之後的工作由使用者決定。
 
 階段推進規則：每個階段完成後停下，提供測試方法與預期結果，等使用者確認再進入下一階段。
 不得提前實作後續階段的功能。
@@ -128,8 +138,8 @@ mvn -q compile           # 編譯全部模組
 mvn test                 # 執行全部測試
 mvn -pl server -am test  # 只測試 server 及其相依模組
 mvn -q package           # 打包成可執行 jar
-java -jar server/target/server-0.1.0-SNAPSHOT.jar [port]
-java -jar client/target/client-0.1.0-SNAPSHOT.jar                     # JavaFX 客戶端
-java -cp client/target/client-0.1.0-SNAPSHOT.jar com.exambattle.client.ClientMain [host] [port]   # 主控台客戶端
-java -jar tools/target/tools-0.1.0-SNAPSHOT.jar [host] [port] [clients] [rooms] [messages]
+java -jar server/target/server-1.0.0.jar [port]
+java -jar client/target/client-1.0.0.jar                     # JavaFX 客戶端
+java -cp client/target/client-1.0.0.jar com.exambattle.client.ClientMain [host] [port]   # 主控台客戶端
+java -jar tools/target/tools-1.0.0.jar [host] [port] [clients] [rooms] [messages]
 ```

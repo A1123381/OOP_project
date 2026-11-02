@@ -99,6 +99,34 @@ class JdbcBankDaoTest {
     }
 
     @Test
+    void listFiltersVisibilityAndSearchesOwner() {
+        long mine = exams.create(new NewExam(prefix + "公開卷", subjectId, 2025, "模擬考", userId,
+                com.exambattle.common.protocol.bank.Visibility.PUBLIC)).id();
+        long hidden = exams.create(new NewExam(prefix + "私人卷", subjectId, null, null, userId,
+                com.exambattle.common.protocol.bank.Visibility.PRIVATE)).id();
+        long stranger = -1L;
+
+        List<Long> seenByOthers = exams.list(new BankRecords.ExamQuery(subjectId, null, stranger, false, false)).stream()
+                .map(s -> s.exam().id()).toList();
+        assertTrue(seenByOthers.contains(mine));
+        assertFalse(seenByOthers.contains(hidden), "別人看不到私人考卷");
+        assertTrue(exams.list(new BankRecords.ExamQuery(subjectId, null, userId, false, true)).stream()
+                .anyMatch(s -> s.exam().id() == hidden), "自己看得到");
+
+        // 以建立者帳號搜尋（只在 JDBC 實作中比對 users）
+        List<Long> byOwner = exams.list(new BankRecords.ExamQuery(null, prefix, stranger, false, false)).stream()
+                .map(s -> s.exam().id()).toList();
+        assertTrue(byOwner.contains(mine));
+
+        ExamRecord down = exams.findById(mine).orElseThrow().exam();
+        exams.update(new ExamRecord(down.id(), down.title(), down.subjectId(), down.year(), down.examType(), userId,
+                com.exambattle.common.protocol.bank.Visibility.PRIVATE, true));
+        assertTrue(exams.findById(mine).orElseThrow().exam().takenDown());
+        assertTrue(exams.list(new BankRecords.ExamQuery(subjectId, null, stranger, true, false)).stream()
+                .anyMatch(s -> s.exam().id() == mine), "管理員看得到被下架的考卷");
+    }
+
+    @Test
     void questionsKeepOrderOptionsAndAnswers() {
         long examId = exams.create(new NewExam("順序", subjectId, 2023, "模擬考", userId)).id();
         QuestionRecord first = questions.createInExam(examId, choice(QuestionType.MULTIPLE_CHOICE, "多選", true, false, true));

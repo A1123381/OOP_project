@@ -7,7 +7,7 @@ import java.time.Duration;
 /**
  * 多客戶端連線測試的進入點。伺服器需先啟動。
  *
- * <pre>java -jar tools/target/tools-0.1.0-SNAPSHOT.jar [host] [port] [clients] [rooms] [messagesPerClient]</pre>
+ * <pre>java -jar tools/target/tools-1.0.0.jar [host] [port] [clients] [rooms] [messagesPerClient]</pre>
  */
 public final class LoadTestMain {
 

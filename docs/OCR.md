@@ -36,7 +36,7 @@ Tesseract 程式本身已內含在客戶端（Tess4J），**不需要另外安�
 1. 系統屬性 `exambattle.tessdata`，例如：
 
    ```bash
-   java -Dexambattle.tessdata=D:\ocr\tessdata -jar client/target/client-0.1.0-SNAPSHOT.jar
+   java -Dexambattle.tessdata=D:\ocr\tessdata -jar client/target/client-1.0.0.jar
    ```
 
 2. 環境變數 `EXAMBATTLE_TESSDATA`。

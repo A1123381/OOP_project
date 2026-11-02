@@ -11,7 +11,7 @@ import java.io.IOException;
 /**
  * 伺服器進入點。資料庫設定見 docs/DATABASE.md。
  *
- * <pre>java -jar server/target/server-0.1.0-SNAPSHOT.jar [port]</pre>
+ * <pre>java -jar server/target/server-1.0.0.jar [port]</pre>
  */
 public final class ServerMain {
 

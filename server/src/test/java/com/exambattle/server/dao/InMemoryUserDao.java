@@ -31,6 +31,12 @@ public final class InMemoryUserDao implements UserDao {
         return Optional.ofNullable(byUsername.get(username.toLowerCase(Locale.ROOT)));
     }
 
+    /** 測試用：把帳號設為管理員（正式環境以 SQL 設定）。 */
+    public void grantAdmin(String username) {
+        byUsername.computeIfPresent(username.toLowerCase(Locale.ROOT), (k, u) -> new UserRecord(u.id(), u.username(),
+                u.displayName(), u.passwordHash(), u.passwordSalt(), u.passwordIterations(), true));
+    }
+
     @Override
     public Optional<UserRecord> findById(long id) {
         return byUsername.values().stream().filter(u -> u.id() == id).findFirst();

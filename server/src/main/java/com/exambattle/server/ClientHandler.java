@@ -170,7 +170,7 @@ final class ClientHandler implements Runnable, Session {
                     requireWelcomed(message);
                     context.auth().login(this, message);
                 }
-                case CREATE_ROOM, JOIN_ROOM, LEAVE_ROOM, GET_ROOM -> {
+                case CREATE_ROOM, JOIN_ROOM, LEAVE_ROOM, GET_ROOM, KICK_PLAYER -> {
                     requireLoggedIn(message);
                     context.roomHandler().handle(this, type.get(), message);
                 }
@@ -179,7 +179,8 @@ final class ClientHandler implements Runnable, Session {
                     context.chat().handle(this, message);
                 }
                 case LIST_SUBJECTS, CREATE_SUBJECT, LIST_EXAMS, GET_EXAM, CREATE_EXAM, UPDATE_EXAM, DELETE_EXAM,
-                     ADD_QUESTION, UPDATE_QUESTION, DELETE_QUESTION, REORDER_QUESTIONS, IMPORT_QUESTIONS, UPDATE_GROUP -> {
+                     ADD_QUESTION, UPDATE_QUESTION, DELETE_QUESTION, REORDER_QUESTIONS, IMPORT_QUESTIONS, UPDATE_GROUP,
+                     TAKE_DOWN_EXAM -> {
                     requireLoggedIn(message);
                     context.bank().handle(this, type.get(), message);
                 }
@@ -187,6 +188,10 @@ final class ClientHandler implements Runnable, Session {
                      REMOVE_WRONG -> {
                     requireLoggedIn(message);
                     context.practice().handle(this, type.get(), message);
+                }
+                case START_GAME, SUBMIT_ANSWER, END_GAME -> {
+                    requireLoggedIn(message);
+                    context.game().handle(this, type.get(), message);
                 }
                 default -> throw new IllegalStateException("未處理的訊息類型: " + type.get());
             }

@@ -6,11 +6,18 @@ package com.exambattle.server.dao;
  * <p>含 byte[] 欄位，record 的 equals 以參考比較；比對密碼請使用 PasswordHasher。
  */
 public record UserRecord(long id, String username, String displayName,
-                         byte[] passwordHash, byte[] passwordSalt, int passwordIterations) {
+                         byte[] passwordHash, byte[] passwordSalt, int passwordIterations, boolean admin) {
+
+    /** 一般使用者（非管理員）。 */
+    public UserRecord(long id, String username, String displayName,
+                      byte[] passwordHash, byte[] passwordSalt, int passwordIterations) {
+        this(id, username, displayName, passwordHash, passwordSalt, passwordIterations, false);
+    }
 
     /** 避免雜湊值出現在日誌中。 */
     @Override
     public String toString() {
-        return "UserRecord[id=" + id + ", username=" + username + ", displayName=" + displayName + "]";
+        return "UserRecord[id=" + id + ", username=" + username + ", displayName=" + displayName
+                + (admin ? ", admin" : "") + "]";
     }
 }

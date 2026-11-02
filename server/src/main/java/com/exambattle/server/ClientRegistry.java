@@ -33,14 +33,14 @@ public final class ClientRegistry {
      *
      * @return false 表示此帳號已在其他連線登入
      */
-    public boolean tryLogin(Session session, UserInfo user, String requestId) {
+    public boolean tryLogin(Session session, UserInfo user, boolean admin, String requestId) {
         synchronized (lock) {
             if (sessions.containsKey(user.userId())) {
                 return false;
             }
             List<UserInfo> others = sessions.values().stream().map(Session::user).toList();
             session.bindUser(user);
-            session.send(Message.of(MessageType.LOGIN_OK, requestId, new LoginOk(user, others)));
+            session.send(Message.of(MessageType.LOGIN_OK, requestId, new LoginOk(user, others, admin)));
             Message joined = Message.of(MessageType.CLIENT_JOINED, null, user);
             sessions.values().forEach(s -> s.send(joined));
             sessions.put(user.userId(), session);

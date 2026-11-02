@@ -22,6 +22,8 @@ public enum ErrorCode {
     ROOM_FULL,
     ALREADY_IN_ROOM,
     NOT_IN_ROOM,
+    NOT_ROOM_OWNER,
+    PLAYER_NOT_FOUND,
 
     // 題庫
     SUBJECT_NOT_FOUND,
@@ -31,11 +33,19 @@ public enum ErrorCode {
     GROUP_NOT_FOUND,
     NOT_OWNER,
     TOO_MANY_QUESTIONS,
+    NOT_ADMIN,
+    EXAM_TAKEN_DOWN,
 
     // 練習
     NO_QUESTIONS,
     PRACTICE_NOT_FOUND,
     ALREADY_ANSWERED,
     WRONG_MODE,
-    RECORD_NOT_FOUND
+    RECORD_NOT_FOUND,
+
+    // 多人競賽
+    GAME_IN_PROGRESS,
+    GAME_NOT_FOUND,
+    WRONG_QUESTION,
+    TIME_UP
 }

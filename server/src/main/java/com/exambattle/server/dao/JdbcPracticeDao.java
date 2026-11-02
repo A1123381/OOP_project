@@ -10,6 +10,7 @@ import com.exambattle.server.dao.PracticeRecords.RecordRow;
 import com.exambattle.server.dao.PracticeRecords.StatsRow;
 import com.exambattle.server.dao.PracticeRecords.WrongRow;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -87,23 +88,37 @@ public final class JdbcPracticeDao implements PracticeDao, WrongQuestionDao {
                 ps.executeBatch();
             }
 
-            // 錯題本：題目已刪除時 SELECT 不到資料，自然略過。
-            // MariaDB 驅動的批次（bulk）協定不支援 INSERT … SELECT … ON DUPLICATE KEY，所以逐筆執行（最多 100 題）。
-            try (PreparedStatement ps = c.prepareStatement("""
-                    INSERT INTO wrong_questions (user_id, question_id, wrong_count, first_wrong_at, last_wrong_at)
-                    SELECT ?, id, 1, ?, ? FROM questions WHERE id = ?
-                    ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, last_wrong_at = VALUES(last_wrong_at)""")) {
-                LocalDateTime now = utc(r.finishedAt());
-                for (long questionId : wrongQuestionIds) {
-                    ps.setLong(1, r.userId());
-                    ps.setObject(2, now);
-                    ps.setObject(3, now);
-                    ps.setLong(4, questionId);
-                    ps.executeUpdate();
-                }
-            }
+            addWrong(c, r.userId(), wrongQuestionIds, r.finishedAt());
             return recordId;
         });
+    }
+
+    @Override
+    public void add(long userId, List<Long> questionIds, Instant at) {
+        database.inTransaction("加入錯題本", c -> {
+            addWrong(c, userId, questionIds, at);
+            return null;
+        });
+    }
+
+    /**
+     * 錯題本：題目已刪除時 SELECT 不到資料，自然略過。
+     * MariaDB 驅動的批次（bulk）協定不支援 INSERT … SELECT … ON DUPLICATE KEY，所以逐筆執行（最多 100 題）。
+     */
+    private static void addWrong(Connection c, long userId, List<Long> questionIds, Instant at) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO wrong_questions (user_id, question_id, wrong_count, first_wrong_at, last_wrong_at)
+                SELECT ?, id, 1, ?, ? FROM questions WHERE id = ?
+                ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, last_wrong_at = VALUES(last_wrong_at)""")) {
+            LocalDateTime now = utc(at);
+            for (long questionId : questionIds) {
+                ps.setLong(1, userId);
+                ps.setObject(2, now);
+                ps.setObject(3, now);
+                ps.setLong(4, questionId);
+                ps.executeUpdate();
+            }
+        }
     }
 
     @Override

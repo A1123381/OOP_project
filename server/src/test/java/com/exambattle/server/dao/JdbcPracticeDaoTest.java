@@ -140,6 +140,17 @@ class JdbcPracticeDaoTest {
     }
 
     @Test
+    void gameWrongsAreAddedWithoutARecord() {
+        practice.add(userId, List.of(q1), T0);
+        practice.add(userId, List.of(q1, q2, 999_999_999L), T0.plusSeconds(30)); // 不存在的題目略過
+
+        List<WrongRow> rows = practice.list(userId, null);
+        assertEquals(2, rows.size());
+        assertEquals(2, rows.stream().filter(r -> r.questionId() == q1).findFirst().orElseThrow().wrongCount());
+        assertTrue(practice.list(userId).isEmpty(), "多人競賽不寫入練習紀錄");
+    }
+
+    @Test
     void deletedQuestionKeepsSnapshotAndLeavesWrongBook() {
         long id = practice.save(record(T0, 0.0, List.of(new NewAnswer(0, q1, "{\"content\":\"單選\"}", "{}", 0.0, false, null))),
                 List.of(q1));

@@ -5,6 +5,7 @@
 -- 第二階段：users。第三階段：subjects、exams、questions、question_options、exam_questions。
 -- 第五階段：practice_records、answer_records、wrong_questions（game_records 保留給第四階段的多人競賽）。
 -- 題組支援：question_groups、questions.group_id（既有資料庫請執行 db/migrations/001_question_groups.sql）。
+-- 第八階段：exams.visibility、exams.taken_down、users.is_admin（既有資料庫請執行 db/migrations/002_visibility_admin.sql）。
 -- 科目與題目內容一律由使用者建立；初始大分類放在 db/seed_subjects.sql（資料，不是程式）。
 
 CREATE TABLE IF NOT EXISTS users (
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash       VARBINARY(32) NOT NULL,
     password_salt       VARBINARY(16) NOT NULL,
     password_iterations INT          NOT NULL,
+    -- 管理員（第八階段）：可以下架別人的公開考卷。只能用 SQL 設定，見 docs/DATABASE.md
+    is_admin            TINYINT(1)   NOT NULL DEFAULT 0,
     created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_username (username)
@@ -40,12 +43,15 @@ CREATE TABLE IF NOT EXISTS subjects (
   COLLATE = utf8mb4_unicode_ci;
 
 -- 考卷基本資料。exam_type 為自由文字（期中考、學測、證照…），不限定內容。
+-- visibility：PUBLIC 所有人看得到；PRIVATE 只有建立者。taken_down：被管理員下架（此時一定是 PRIVATE，建立者不能再公開）。
 CREATE TABLE IF NOT EXISTS exams (
     id          BIGINT       NOT NULL AUTO_INCREMENT,
     title       VARCHAR(200) NOT NULL,
     subject_id  BIGINT       NOT NULL,
     exam_year   SMALLINT     NULL,
     exam_type   VARCHAR(50)  NULL,
+    visibility  ENUM ('PUBLIC', 'PRIVATE') NOT NULL DEFAULT 'PUBLIC',
+    taken_down  TINYINT(1)   NOT NULL DEFAULT 0,
     created_by  BIGINT       NOT NULL,
     created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
