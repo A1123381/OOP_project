@@ -48,6 +48,7 @@ public final class ChatServer implements AutoCloseable {
         }
         serverSocket = new ServerSocket(config.port());
         running = true;
+        context.images().startCleanup();
         Thread.ofPlatform().name("accept-" + port()).start(this::acceptLoop);
         LOG.info(() -> "伺服器啟動，埠號 " + port());
     }
@@ -113,6 +114,7 @@ public final class ChatServer implements AutoCloseable {
         }
         connections.forEach(ClientHandler::shutdown);
         context.games().close();
+        context.images().close();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

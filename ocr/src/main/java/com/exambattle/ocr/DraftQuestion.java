@@ -13,12 +13,19 @@ import java.util.List;
  * @param warnings    需要人工確認的地方
  * @param groupIndex  所屬題組在 {@link SplitResult#groups()} 中的位置；不屬於題組時為 null
  * @param unsupported 非選擇題（填充、簡答、作文等），系統不支援，預設不匯入
+ * @param imageOptions 選項看起來是圖片或圖表（D-045）：選項文字已清空，由客戶端依座標自動截圖
  */
 public record DraftQuestion(Integer number, String content, List<String> options, QuestionType guessedType,
-                            int sourcePage, List<String> warnings, Integer groupIndex, boolean unsupported) {
+                            int sourcePage, List<String> warnings, Integer groupIndex, boolean unsupported,
+                            boolean imageOptions) {
 
     public DraftQuestion(Integer number, String content, List<String> options, QuestionType guessedType,
                          int sourcePage, List<String> warnings) {
-        this(number, content, options, guessedType, sourcePage, warnings, null, false);
+        this(number, content, options, guessedType, sourcePage, warnings, null, false, false);
+    }
+
+    public DraftQuestion(Integer number, String content, List<String> options, QuestionType guessedType,
+                         int sourcePage, List<String> warnings, Integer groupIndex, boolean unsupported) {
+        this(number, content, options, guessedType, sourcePage, warnings, groupIndex, unsupported, false);
     }
 }

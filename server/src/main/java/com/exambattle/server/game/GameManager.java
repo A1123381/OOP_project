@@ -171,8 +171,8 @@ public final class GameManager implements RoomManager.Listener, AutoCloseable {
             game.deadline = clock.instant().plus(answerTime);
             QuestionRecord q = game.questions.get(index);
             PracticeQuestion shown = new PracticeQuestion(index, q.id(), q.type(), q.content(),
-                    q.options().stream().map(o -> new PracticeOption(o.id(), o.content())).toList(),
-                    q.groupId(), q.passage());
+                    q.options().stream().map(o -> new PracticeOption(o.id(), o.content(), o.imageId())).toList(),
+                    q.groupId(), q.passage(), q.imageId(), q.passageImageId());
             broadcast(game, Message.of(MessageType.GAME_QUESTION, null,
                     new GameQuestion(game.id, index, game.questions.size(), shown, answerTime.toMillis())));
             game.pending = schedule(() -> closeQuestion(game, index), answerTime.plus(timing.grace()));

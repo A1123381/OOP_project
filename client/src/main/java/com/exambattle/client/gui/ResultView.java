@@ -34,7 +34,10 @@ final class ResultView {
     private final BorderPane root = new BorderPane();
 
     /** @param actions 顯示在上方的按鈕（例如再練一次、回到設定），可為空 */
-    ResultView(PracticeResult result, Node... actions) {
+    private final ImageCache cache;
+
+    ResultView(ImageCache cache, PracticeResult result, Node... actions) {
+        this.cache = cache;
         RecordSummary r = result.record();
         Label title = new Label(r.title());
         title.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
@@ -71,8 +74,8 @@ final class ResultView {
         for (ResultItem item : result.questions()) {
             QuestionData q = item.question();
             // 同一題組連續的題目只在第一題顯示文章
-            if (q.passage() != null && !q.groupId().equals(previousGroup)) {
-                items.getChildren().add(PassageView.create(q.passage(), 13, false));
+            if ((q.passage() != null || q.passageImageId() != null) && !java.util.Objects.equals(q.groupId(), previousGroup)) {
+                items.getChildren().add(PassageView.create(cache, q.passage(), q.passageImageId(), 13, false));
             }
             previousGroup = q.groupId();
             items.getChildren().add(itemBox(item));
@@ -96,7 +99,7 @@ final class ResultView {
         return new VBox(2, n, v);
     }
 
-    private static VBox itemBox(ResultItem item) {
+    private VBox itemBox(ResultItem item) {
         QuestionData q = item.question();
         AnswerData a = item.answer();
         String verdict = item.correct() ? "✔ 答對" : item.score() > 0 ? "△ 部分給分" : "✘ 答錯";
@@ -106,7 +109,7 @@ final class ResultView {
         Label content = new Label(q.content());
         content.setWrapText(true);
 
-        VBox box = new VBox(6, header, content);
+        VBox box = new VBox(6, header, ImageViews.withImage(content, cache, q.imageId(), ImageViews.STEM_WIDTH));
         if (q.type() != QuestionType.TRUE_FALSE) {
             List<Long> picked = a == null || a.selectedOptionIds() == null ? List.of() : a.selectedOptionIds();
             for (int i = 0; i < q.options().size(); i++) {
@@ -114,8 +117,9 @@ final class ResultView {
                 boolean correct = Boolean.TRUE.equals(o.correct());
                 boolean chosen = picked.contains(o.id());
                 Label line = new Label((correct ? "✔ " : "　 ") + (chosen ? "● " : "○ ")
-                        + ResultText.letter(i) + ". " + o.content());
+                        + ImageViews.optionText(ResultText.letter(i), o.content(), o.imageId()));
                 line.setWrapText(true);
+                ImageViews.decorate(line, cache, o.imageId(), 320);
                 if (chosen && !correct) {
                     line.setStyle("-fx-text-fill: " + WRONG_COLOR + ";");
                 } else if (correct) {

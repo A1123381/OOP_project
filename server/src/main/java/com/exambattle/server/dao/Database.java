@@ -58,7 +58,7 @@ public final class Database {
                 throw new DataAccessException("資料庫連線無效：" + config, null);
             }
             for (String table : new String[] {"users", "subjects", "exams", "questions", "question_options",
-                    "exam_questions", "practice_records", "answer_records", "wrong_questions", "question_groups"}) {
+                    "exam_questions", "practice_records", "answer_records", "wrong_questions", "question_groups", "images"}) {
                 try (var rs = c.getMetaData().getTables(c.getCatalog(), null, table, null)) {
                     if (!rs.next()) {
                         throw new DataAccessException("找不到 " + table + " 資料表，請先執行 db/schema.sql"
@@ -69,6 +69,7 @@ public final class Database {
             requireColumn(c, "questions", "group_id", "001_question_groups.sql");
             requireColumn(c, "exams", "visibility", "002_visibility_admin.sql");
             requireColumn(c, "users", "is_admin", "002_visibility_admin.sql");
+            requireColumn(c, "question_options", "image_id", "003_images.sql");
         } catch (SQLException e) {
             throw new DataAccessException("無法連線到資料庫 " + config + "：" + e.getMessage(), e);
         }

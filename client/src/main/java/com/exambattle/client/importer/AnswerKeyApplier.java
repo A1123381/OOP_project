@@ -64,7 +64,7 @@ public final class AnswerKeyApplier {
             if (tf.isEmpty()) {
                 return Optional.of("是非題的答案「" + key.token() + "」不是對／錯記號");
             }
-            item.setDraft(new QuestionDraft(d.type(), d.content(), d.explanation(), d.options(), tf.get()));
+            item.setDraft(d.withTrueFalse(tf.get()));
             return Optional.empty();
         }
         Optional<Set<Character>> letters = key.letters();
@@ -81,9 +81,9 @@ public final class AnswerKeyApplier {
         }
         List<QuestionDraft.Option> options = new ArrayList<>();
         for (int i = 0; i < d.options().size(); i++) {
-            options.add(new QuestionDraft.Option(d.options().get(i).content(), letters.get().contains((char) ('A' + i))));
+            options.add(d.options().get(i).withCorrect(letters.get().contains((char) ('A' + i))));
         }
-        item.setDraft(new QuestionDraft(d.type(), d.content(), d.explanation(), options, d.trueFalseAnswer()));
+        item.setDraft(d.withOptions(options));
         return Optional.empty();
     }
 }

@@ -25,11 +25,21 @@ final class PassageView {
 
     /** @param expanded 初始是否展開 */
     static TitledPane create(String passage, double fontSize, boolean expanded) {
+        return create(null, passage, null, fontSize, expanded);
+    }
+
+    /** 帶文章圖片（D-043）；imageId 可以是 null。 */
+    static TitledPane create(ImageCache cache, String passage, String imageId, double fontSize, boolean expanded) {
+        if (passage == null) {
+            passage = "";
+        }
         TextFlow flow = flow(passage, fontSize);
-        ScrollPane scroll = new ScrollPane(flow);
+        javafx.scene.Node image = imageId == null || cache == null ? null : ImageViews.of(cache, imageId, ImageViews.STEM_WIDTH);
+        ScrollPane scroll = new ScrollPane(image == null ? flow : new javafx.scene.layout.VBox(6, flow, image));
         scroll.setFitToWidth(true);
-        scroll.setPrefViewportHeight(Math.min(MAX_HEIGHT, 40 + passage.length() / 3.0));
-        scroll.setMaxHeight(MAX_HEIGHT);
+        double max = image == null ? MAX_HEIGHT : MAX_HEIGHT + 220;
+        scroll.setPrefViewportHeight(Math.min(max, 40 + passage.length() / 3.0 + (image == null ? 0 : 240)));
+        scroll.setMaxHeight(max);
         TitledPane pane = new TitledPane("題組文章", scroll);
         pane.setExpanded(expanded);
         pane.setAnimated(false);

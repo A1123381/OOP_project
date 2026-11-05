@@ -490,6 +490,7 @@ public final class QuestionSplitter {
 
         String stem;
         List<String> options;
+        boolean imageOptions = false;
         Section kind = block.hint != null ? block.hint : block.section;
         if (block.fixedOptions != null) {
             stem = "第 " + block.number + " 格";
@@ -503,6 +504,10 @@ public final class QuestionSplitter {
             Options parsed = parseOptions(text);
             options = parsed.options;
             if (options.size() >= 2) {
+                long optionLines = text.substring(parsed.markers.get(0).start()).lines().count();
+                // 圖片選項（D-045）：文字跨越過多行（地圖、圖表上的零碎文字），或有選項沒有文字
+                imageOptions = !unsupported
+                        && (optionLines > options.size() * 2L + 2 || options.stream().anyMatch(String::isEmpty));
                 stem = text.substring(0, parsed.markers.get(0).start()).strip();
                 if (parsed.gap) {
                     warnings.add("選項字母不連續，可能有選項沒有辨識出來");
@@ -510,12 +515,10 @@ public final class QuestionSplitter {
                 if (parsed.damaged) {
                     warnings.add("選項記號辨識不完整（例如缺少括號），請確認選項切分是否正確");
                 }
-                if (options.stream().anyMatch(String::isEmpty)) {
-                    warnings.add("有選項內容是空的");
-                }
-                long optionLines = text.substring(parsed.markers.get(0).start()).lines().count();
-                if (optionLines > options.size() * 2L + 2) {
-                    warnings.add("選項可能是圖片或圖表（文字零碎），請對照原始頁面確認");
+                if (imageOptions) {
+                    // 零碎的文字沒有意義：清空，由客戶端依選項記號的座標截圖
+                    options = java.util.Collections.nCopies(options.size(), "");
+                    warnings.add("選項可能是圖片或圖表：已清空選項文字並自動截圖，請對照原始頁面確認");
                 }
             } else {
                 stem = text;
@@ -543,7 +546,7 @@ public final class QuestionSplitter {
             type = kind == Section.TRUE_FALSE ? QuestionType.TRUE_FALSE : null;
         }
         return new DraftQuestion(block.number, stem, List.copyOf(options), type, block.page, List.copyOf(warnings),
-                groupIndex, unsupported);
+                groupIndex, unsupported, imageOptions);
     }
 
     private static Integer parseNumber(Matcher m) {

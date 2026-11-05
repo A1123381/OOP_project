@@ -24,7 +24,8 @@ import java.util.Optional;
 public final class JdbcQuestionDao implements QuestionDao {
 
     private static final String QUESTION_COLUMNS =
-            "q.id, q.type, q.content, q.explanation, q.true_false_answer, q.created_by, q.group_id, g.passage";
+            "q.id, q.type, q.content, q.explanation, q.true_false_answer, q.created_by, q.group_id, g.passage,"
+                    + " q.image_id, g.image_id AS passage_image_id";
 
     private final Database database;
 
@@ -45,11 +46,12 @@ public final class JdbcQuestionDao implements QuestionDao {
     static long insertQuestion(Connection c, NewQuestion question, Long groupId) throws SQLException {
         long id;
         try (PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO questions (type, content, explanation, true_false_answer, group_id, created_by)
-                VALUES (?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
+                INSERT INTO questions (type, content, explanation, true_false_answer, group_id, image_id, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""", Statement.RETURN_GENERATED_KEYS)) {
             bindQuestion(ps, question);
             bindGroup(ps, 5, groupId);
-            ps.setLong(6, question.ownerId());
+            ps.setString(6, question.imageId());
+            ps.setLong(7, question.ownerId());
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -87,11 +89,13 @@ public final class JdbcQuestionDao implements QuestionDao {
         return database.inTransaction("更新題目", c -> {
             List<Long> previousGroup = groupIdsOf(c, List.of(questionId));
             try (PreparedStatement ps = c.prepareStatement("""
-                    UPDATE questions SET type = ?, content = ?, explanation = ?, true_false_answer = ?, group_id = ?
+                    UPDATE questions SET type = ?, content = ?, explanation = ?, true_false_answer = ?, group_id = ?,
+                        image_id = ?
                     WHERE id = ?""")) {
                 bindQuestion(ps, question);
                 bindGroup(ps, 5, resolveGroup(c, question));
-                ps.setLong(6, questionId);
+                ps.setString(6, question.imageId());
+                ps.setLong(7, questionId);
                 ps.executeUpdate();
             }
             deleteEmptyGroups(c, previousGroup);
@@ -232,23 +236,27 @@ public final class JdbcQuestionDao implements QuestionDao {
     }
 
     @Override
-    public void updatePassage(long groupId, String passage) {
+    public void updatePassage(long groupId, String passage, String imageId) {
         database.run("修改題組文章", c -> {
-            try (PreparedStatement ps = c.prepareStatement("UPDATE question_groups SET passage = ? WHERE id = ?")) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE question_groups SET passage = ?, image_id = ? WHERE id = ?")) {
                 ps.setString(1, passage);
-                ps.setLong(2, groupId);
+                ps.setString(2, imageId);
+                ps.setLong(3, groupId);
                 ps.executeUpdate();
             }
             return null;
         });
     }
 
-    /** 新增題組，回傳 id。呼叫端負責交易。 */
-    static long insertGroup(Connection c, String passage, long ownerId) throws SQLException {
+    /** 新增題組，回傳 id；imageId 為題組文章的圖片，可為 null。呼叫端負責交易。 */
+    static long insertGroup(Connection c, String passage, String imageId, long ownerId) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO question_groups (passage, created_by) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                "INSERT INTO question_groups (passage, image_id, created_by) VALUES (?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, passage);
-            ps.setLong(2, ownerId);
+            ps.setString(2, imageId);
+            ps.setLong(3, ownerId);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -262,7 +270,8 @@ public final class JdbcQuestionDao implements QuestionDao {
         if (question.groupId() != null) {
             return question.groupId();
         }
-        return question.newPassage() == null ? null : insertGroup(c, question.newPassage(), question.ownerId());
+        return question.newPassage() == null ? null
+                : insertGroup(c, question.newPassage(), question.newPassageImageId(), question.ownerId());
     }
 
     /** 這些題目所屬的題組 id（不重複）。 */
@@ -328,13 +337,14 @@ public final class JdbcQuestionDao implements QuestionDao {
         String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
 
         Map<Long, List<OptionRecord>> options = new HashMap<>();
-        try (PreparedStatement ps = c.prepareStatement("SELECT question_id, id, content, is_correct "
+        try (PreparedStatement ps = c.prepareStatement("SELECT question_id, id, content, is_correct, image_id "
                 + "FROM question_options WHERE question_id IN (" + placeholders + ") ORDER BY question_id, position")) {
             bindIds(ps, ids);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     options.computeIfAbsent(rs.getLong("question_id"), k -> new ArrayList<>())
-                            .add(new OptionRecord(rs.getLong("id"), rs.getString("content"), rs.getBoolean("is_correct")));
+                            .add(new OptionRecord(rs.getLong("id"), rs.getString("content"), rs.getBoolean("is_correct"),
+                                    rs.getString("image_id")));
                 }
             }
         }
@@ -354,7 +364,8 @@ public final class JdbcQuestionDao implements QuestionDao {
                     byId.put(id, new QuestionRecord(id, QuestionType.valueOf(rs.getString("type")),
                             rs.getString("content"), rs.getString("explanation"), trueFalse,
                             rs.getLong("created_by"), List.copyOf(options.getOrDefault(id, List.of())),
-                            groupId, rs.getString("passage")));
+                            groupId, rs.getString("passage"), rs.getString("image_id"),
+                            rs.getString("passage_image_id")));
                 }
             }
         }
@@ -377,12 +388,14 @@ public final class JdbcQuestionDao implements QuestionDao {
             return;
         }
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO question_options (question_id, position, content, is_correct) VALUES (?, ?, ?, ?)")) {
+                "INSERT INTO question_options (question_id, position, content, is_correct, image_id)"
+                        + " VALUES (?, ?, ?, ?, ?)")) {
             for (int i = 0; i < options.size(); i++) {
                 ps.setLong(1, questionId);
                 ps.setInt(2, i + 1);
                 ps.setString(3, options.get(i).content());
                 ps.setBoolean(4, options.get(i).correct());
+                ps.setString(5, options.get(i).imageId());
                 ps.addBatch();
             }
             ps.executeBatch();

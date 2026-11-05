@@ -91,7 +91,7 @@ final class RecordsPane {
         session.call(MessageType.GET_RECORD, new RecordRef(record.id()), PracticeResult.class, result -> {
             Stage stage = new Stage();
             stage.setTitle("練習結果 - " + record.title());
-            Parent content = new ResultView(result).root();
+            Parent content = new ResultView(session.images(), result).root();
             content.setStyle(root.getScene().getRoot().getStyle());
             stage.setScene(new Scene(content, 820, 680));
             stage.initOwner(root.getScene().getWindow());

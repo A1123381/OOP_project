@@ -1,5 +1,6 @@
 package com.exambattle.client.gui;
 
+import com.exambattle.client.gui.model.DraftImage;
 import com.exambattle.client.gui.model.QuestionDraft;
 import com.exambattle.client.gui.model.QuestionGroups;
 import com.exambattle.common.protocol.Protocol;
@@ -11,6 +12,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -33,6 +35,16 @@ final class QuestionDialog {
     private static final GroupChoice NONE = new GroupChoice(null, "不屬於題組", false);
     private static final GroupChoice NEW = new GroupChoice(null, "新題組（輸入文章）", true);
 
+    /**
+     * 對話框的結果。圖片可能還在本機，由呼叫端上傳後再送出。
+     *
+     * @param groupId          加入的既有題組；null 表示不屬於既有題組
+     * @param newPassage       建立新題組時的文章；null 表示不建立
+     * @param newPassageImage  新題組文章的圖片
+     */
+    record Result(QuestionDraft draft, Long groupId, String newPassage, DraftImage newPassageImage) {
+    }
+
     private QuestionDialog() {
     }
 
@@ -40,8 +52,8 @@ final class QuestionDialog {
      * @param existing 編輯時為原題目（含答案），新增時為 null
      * @param groups   這份考卷中的題組
      */
-    static Optional<QuestionData> show(QuestionData existing, List<QuestionGroups.Group> groups) {
-        QuestionEditor editor = new QuestionEditor();
+    static Optional<Result> show(ImageCache cache, QuestionData existing, List<QuestionGroups.Group> groups) {
+        QuestionEditor editor = new QuestionEditor(cache);
         editor.load(existing == null ? QuestionDraft.empty(QuestionType.SINGLE_CHOICE) : QuestionDraft.from(existing));
 
         List<GroupChoice> choices = new ArrayList<>();
@@ -70,17 +82,24 @@ final class QuestionDialog {
         passage.setPromptText("題組文章（閱讀測驗、克漏字等多題共用；克漏字的空格可寫成【11】）");
         passage.visibleProperty().bind(group.valueProperty().isEqualTo(NEW));
         passage.managedProperty().bind(passage.visibleProperty());
+        ImageSlot passageImage = new ImageSlot(cache, "題組文章", 240);
+        passageImage.root().visibleProperty().bind(passage.visibleProperty());
+        passageImage.root().managedProperty().bind(passage.visibleProperty());
         Label hint = new Label("要修改既有題組的文章，請在題庫畫面按「編輯題組文章」（同組題目一起改變）。");
         hint.setStyle("-fx-text-fill: #555;");
 
-        Dialog<QuestionData> dialog = new Dialog<>();
+        Dialog<Result> dialog = new Dialog<>();
         dialog.setTitle(existing == null ? "新增題目" : "編輯題目");
         dialog.setHeaderText("正確答案可先不設定；未設定答案的題目不會用於練習與競賽");
         dialog.setResizable(true);
-        VBox content = new VBox(10, new HBox(8, new Label("題組"), group), passage, hint, editor.root());
+        VBox content = new VBox(10, new HBox(8, new Label("題組"), group), passage, passageImage.root(), hint,
+                editor.root());
         content.setPadding(new Insets(10));
-        content.setPrefWidth(620);
-        dialog.getDialogPane().setContent(content);
+        content.setPrefWidth(660);
+        ScrollPane scroll = new ScrollPane(content);
+        scroll.setFitToWidth(true);
+        scroll.setPrefViewportHeight(620);
+        dialog.getDialogPane().setContent(scroll);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, e -> {
             QuestionDraft current = editor.current();
@@ -99,9 +118,10 @@ final class QuestionDialog {
             if (b != ButtonType.OK) {
                 return null;
             }
-            QuestionData data = editor.current().toData();
             GroupChoice choice = group.getValue();
-            return choice.create() ? data.withGroup(null, passage.getText().strip()) : data.withGroup(choice.groupId(), null);
+            return choice.create()
+                    ? new Result(editor.current(), null, passage.getText().strip(), passageImage.value())
+                    : new Result(editor.current(), choice.groupId(), null, null);
         });
         return dialog.showAndWait();
     }

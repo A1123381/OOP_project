@@ -19,12 +19,13 @@ import java.util.List;
  * 只包含原檔名（不含路徑）、各頁文字與校正中的題目；不包含原始檔案或頁面圖片。
  *
  * <p>v1（第六階段）存切題結果 {@code questions}；v2（第七階段）存校正內容 {@code items}；
- * v3 加上題組 {@code groups}（items 以位置指向題組）。讀取舊版時自動轉換。
+ * v3 加上題組 {@code groups}（items 以位置指向題組）；v4 加上題目、選項與題組文章的圖片（Base64，D-043）。
+ * 讀取舊版時自動轉換。
  */
 public final class ImportDraftFile {
 
     public static final String FORMAT = "exam-battle-import-draft";
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
     public static final String EXTENSION = "ebdraft.json";
 
     /** 草稿內容。fileName 只有檔名；questions 只出現在 v1 檔案中；groups 從 v3 開始。 */

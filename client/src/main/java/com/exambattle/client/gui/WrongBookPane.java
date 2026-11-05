@@ -42,6 +42,8 @@ final class WrongBookPane {
     private final ComboBox<SubjectInfo> subject = new ComboBox<>();
     private final TableView<WrongItem> table = new TableView<>();
     private final TextArea preview = new TextArea();
+    /** 預覽中的圖片（題組文章、題目、選項）。 */
+    private final javafx.scene.layout.FlowPane previewImages = new javafx.scene.layout.FlowPane(8, 8);
     private final Label count = new Label();
 
     /** @param onReview 按「複習錯題」時呼叫，參數為目前的分類篩選（全部時為 null） */
@@ -94,7 +96,7 @@ final class WrongBookPane {
 
         root.getChildren().addAll(heading,
                 new HBox(10, new Label("分類"), subject, count),
-                table, new HBox(10, review, remove, refresh), new Label("正確答案與解說"), preview);
+                table, new HBox(10, review, remove, refresh), new Label("正確答案與解說"), preview, previewImages);
         root.setPadding(new Insets(16));
     }
 
@@ -130,11 +132,17 @@ final class WrongBookPane {
     }
 
     private void showPreview(WrongItem item) {
+        previewImages.getChildren().clear();
         if (item == null) {
             preview.clear();
             return;
         }
         QuestionData q = item.question();
+        addPreviewImage("文章圖", q.passageImageId());
+        addPreviewImage("題目圖", q.imageId());
+        for (int i = 0; i < q.options().size(); i++) {
+            addPreviewImage("選項 " + ResultText.letter(i), q.options().get(i).imageId());
+        }
         StringBuilder text = new StringBuilder();
         if (q.passage() != null) {
             text.append("【題組文章】\n").append(q.passage()).append("\n\n");
@@ -143,8 +151,8 @@ final class WrongBookPane {
         if (q.type() != QuestionType.TRUE_FALSE) {
             for (int i = 0; i < q.options().size(); i++) {
                 boolean correct = Boolean.TRUE.equals(q.options().get(i).correct());
-                text.append(correct ? "✔ " : "　 ").append(ResultText.letter(i)).append(". ")
-                        .append(q.options().get(i).content()).append("\n");
+                text.append(correct ? "✔ " : "　 ").append(ImageViews.optionText(ResultText.letter(i),
+                        q.options().get(i).content(), q.options().get(i).imageId())).append("\n");
             }
         }
         text.append("\n正確答案：").append(ResultText.correctAnswer(q));
@@ -153,6 +161,13 @@ final class WrongBookPane {
         }
         text.append("\n\n已答錯 ").append(item.wrongCount()).append(" 次");
         preview.setText(text.toString());
+    }
+
+    private void addPreviewImage(String label, String imageId) {
+        javafx.scene.Node view = ImageViews.of(session.images(), imageId, 150);
+        if (view != null) {
+            previewImages.getChildren().add(new javafx.scene.layout.VBox(2, new Label(label), view));
+        }
     }
 
     private static TableColumn<WrongItem, String> column(String title, double width, Function<WrongItem, String> value) {

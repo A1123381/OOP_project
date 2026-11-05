@@ -284,8 +284,9 @@ final class PracticePane {
             ToggleGroup group = new ToggleGroup();
             for (int i = 0; i < q.options().size(); i++) {
                 PracticeOption o = q.options().get(i);
-                RadioButton b = new RadioButton(ResultText.letter(i) + ". " + o.content());
+                RadioButton b = new RadioButton(ImageViews.optionText(ResultText.letter(i), o.content(), o.imageId()));
                 b.setWrapText(true);
+                ImageViews.decorate(b, session.images(), o.imageId(), ImageViews.OPTION_WIDTH);
                 b.setToggleGroup(group);
                 b.setUserData(o.id());
                 b.setSelected(practice.choices(index).contains(o.id()));
@@ -298,8 +299,9 @@ final class PracticePane {
             List<CheckBox> boxes = new ArrayList<>();
             for (int i = 0; i < q.options().size(); i++) {
                 PracticeOption o = q.options().get(i);
-                CheckBox b = new CheckBox(ResultText.letter(i) + ". " + o.content());
+                CheckBox b = new CheckBox(ImageViews.optionText(ResultText.letter(i), o.content(), o.imageId()));
                 b.setWrapText(true);
+                ImageViews.decorate(b, session.images(), o.imageId(), ImageViews.OPTION_WIDTH);
                 b.setUserData(o.id());
                 b.setSelected(practice.choices(index).contains(o.id()));
                 b.setDisable(locked);
@@ -319,12 +321,14 @@ final class PracticePane {
         }
 
         VBox body = new VBox(14, type);
-        if (q.passage() != null) {
-            javafx.scene.control.TitledPane passage = PassageView.create(q.passage(), 15, passageExpanded);
+        if (q.passage() != null || q.passageImageId() != null) {
+            javafx.scene.control.TitledPane passage = PassageView.create(session.images(), q.passage(), q.passageImageId(), 15,
+                    passageExpanded);
             passage.expandedProperty().addListener((obs, a, b) -> passageExpanded = b);
             body.getChildren().add(passage);
         }
-        body.getChildren().addAll(content, optionsBox, feedback);
+        body.getChildren().addAll(ImageViews.withImage(content, session.images(), q.imageId(), ImageViews.STEM_WIDTH),
+                optionsBox, feedback);
         body.setPadding(new Insets(20));
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
@@ -471,7 +475,7 @@ final class PracticePane {
         back.setOnAction(e -> showSetup());
         root.setTop(null);
         root.setBottom(null);
-        root.setCenter(new ResultView(result, again, back).root());
+        root.setCenter(new ResultView(session.images(), result, again, back).root());
         onFinished.run();
     }
 

@@ -23,6 +23,7 @@ public final class GuiSession implements ServerConnection.Listener {
     private final ClientState state;
     private final ServerConnection connection;
     private volatile Consumer<String> onDisconnected = reason -> { };
+    private ImageCache images;
 
     private GuiSession(String host, int port, ClientState state) throws IOException {
         this.state = state;
@@ -44,6 +45,14 @@ public final class GuiSession implements ServerConnection.Listener {
 
     public ClientState state() {
         return state;
+    }
+
+    /** 題目圖片的快取（JavaFX 執行緒上使用）。 */
+    ImageCache images() {
+        if (images == null) {
+            images = new ImageCache(this);
+        }
+        return images;
     }
 
     /** 連線中斷時在 JavaFX 執行緒呼叫。 */

@@ -6,6 +6,7 @@
 -- 第五階段：practice_records、answer_records、wrong_questions（game_records 保留給第四階段的多人競賽）。
 -- 題組支援：question_groups、questions.group_id（既有資料庫請執行 db/migrations/001_question_groups.sql）。
 -- 第八階段：exams.visibility、exams.taken_down、users.is_admin（既有資料庫請執行 db/migrations/002_visibility_admin.sql）。
+-- 題目圖片：images、questions／question_options／question_groups 的 image_id（既有資料庫請執行 db/migrations/003_images.sql）。
 -- 科目與題目內容一律由使用者建立；初始大分類放在 db/seed_subjects.sql（資料，不是程式）。
 
 CREATE TABLE IF NOT EXISTS users (
@@ -22,6 +23,25 @@ CREATE TABLE IF NOT EXISTS users (
     created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_username (username)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- 題目圖片（D-043）：題幹、選項、題組文章共用。id 為隨機 32 個十六進位字元；相同內容（sha256）只存一份。
+-- 沒有被任何題目、選項、題組引用且超過 24 小時的圖片由伺服器清除。
+CREATE TABLE IF NOT EXISTS images (
+    id         CHAR(32)     NOT NULL,
+    sha256     CHAR(64)     NOT NULL,
+    mime       VARCHAR(20)  NOT NULL,
+    width      INT          NOT NULL,
+    height     INT          NOT NULL,
+    bytes      MEDIUMBLOB   NOT NULL,
+    created_by BIGINT       NOT NULL,
+    created_at DATETIME(3)  NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_images_sha256 (sha256),
+    KEY idx_images_created (created_at),
+    CONSTRAINT fk_images_creator FOREIGN KEY (created_by) REFERENCES users (id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -68,17 +88,19 @@ CREATE TABLE IF NOT EXISTS exams (
 CREATE TABLE IF NOT EXISTS question_groups (
     id         BIGINT     NOT NULL AUTO_INCREMENT,
     passage    MEDIUMTEXT NOT NULL,
+    image_id   CHAR(32)   NULL,
     created_by BIGINT     NOT NULL,
     created_at TIMESTAMP  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    CONSTRAINT fk_groups_creator FOREIGN KEY (created_by) REFERENCES users (id)
+    CONSTRAINT fk_groups_creator FOREIGN KEY (created_by) REFERENCES users (id),
+    CONSTRAINT fk_groups_image FOREIGN KEY (image_id) REFERENCES images (id) ON DELETE SET NULL
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
 -- 題目與考卷分開管理（見 exam_questions），同一題日後可放進多份考卷。
 -- true_false_answer：是非題答案，NULL 表示尚未設定（不得自行推測答案）。
--- image_path：保留給之後的題目圖片，第三階段不使用。
+-- image_path：舊的保留欄位，不使用；題幹圖片為 image_id。
 -- group_id：所屬題組；NULL 表示獨立的題目。
 CREATE TABLE IF NOT EXISTS questions (
     id                BIGINT       NOT NULL AUTO_INCREMENT,
@@ -87,6 +109,7 @@ CREATE TABLE IF NOT EXISTS questions (
     explanation       TEXT         NULL,
     true_false_answer TINYINT(1)   NULL,
     image_path        VARCHAR(255) NULL,
+    image_id          CHAR(32)     NULL,
     group_id          BIGINT       NULL,
     created_by        BIGINT       NOT NULL,
     created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -94,7 +117,8 @@ CREATE TABLE IF NOT EXISTS questions (
     PRIMARY KEY (id),
     KEY idx_questions_group (group_id),
     CONSTRAINT fk_questions_creator FOREIGN KEY (created_by) REFERENCES users (id),
-    CONSTRAINT fk_questions_group FOREIGN KEY (group_id) REFERENCES question_groups (id) ON DELETE SET NULL
+    CONSTRAINT fk_questions_group FOREIGN KEY (group_id) REFERENCES question_groups (id) ON DELETE SET NULL,
+    CONSTRAINT fk_questions_image FOREIGN KEY (image_id) REFERENCES images (id) ON DELETE SET NULL
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -105,10 +129,12 @@ CREATE TABLE IF NOT EXISTS question_options (
     question_id BIGINT     NOT NULL,
     position    INT        NOT NULL,
     content     TEXT       NOT NULL,
+    image_id    CHAR(32)   NULL,
     is_correct  TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     KEY idx_options_question (question_id, position),
-    CONSTRAINT fk_options_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE
+    CONSTRAINT fk_options_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
+    CONSTRAINT fk_options_image FOREIGN KEY (image_id) REFERENCES images (id) ON DELETE SET NULL
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

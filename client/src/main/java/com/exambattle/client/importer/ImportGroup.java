@@ -1,5 +1,6 @@
 package com.exambattle.client.importer;
 
+import com.exambattle.client.gui.model.DraftImage;
 import com.exambattle.common.protocol.Protocol;
 import com.exambattle.ocr.DraftGroup;
 
@@ -13,10 +14,13 @@ import java.util.Optional;
 public final class ImportGroup {
 
     /** 存進草稿檔的內容。 */
-    public record Data(String passage, Integer firstNumber, Integer lastNumber, int sourcePage, List<String> warnings) {
+    public record Data(String passage, Integer firstNumber, Integer lastNumber, int sourcePage, List<String> warnings,
+                       DraftImage image) {
     }
 
     private String passage;
+    /** 題組文章的圖片（D-043）；null 表示沒有。 */
+    private DraftImage image;
     private final Integer firstNumber;
     private final Integer lastNumber;
     private final int sourcePage;
@@ -40,12 +44,14 @@ public final class ImportGroup {
     }
 
     public static ImportGroup fromData(Data d) {
-        return new ImportGroup(d.passage(), d.firstNumber(), d.lastNumber(), d.sourcePage(),
+        ImportGroup group = new ImportGroup(d.passage(), d.firstNumber(), d.lastNumber(), d.sourcePage(),
                 d.warnings() == null ? List.of() : d.warnings());
+        group.image = d.image();
+        return group;
     }
 
     public Data toData() {
-        return new Data(passage, firstNumber, lastNumber, sourcePage, warnings);
+        return new Data(passage, firstNumber, lastNumber, sourcePage, warnings, image);
     }
 
     /** 清單上的標示，例如「題組 11–15」。 */
@@ -66,6 +72,14 @@ public final class ImportGroup {
             return Optional.of("題組文章不可超過 " + Protocol.MAX_PASSAGE_CHARS + " 字元");
         }
         return Optional.empty();
+    }
+
+    public DraftImage image() {
+        return image;
+    }
+
+    public void setImage(DraftImage image) {
+        this.image = image;
     }
 
     public String passage() {

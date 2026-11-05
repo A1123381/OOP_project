@@ -1,6 +1,8 @@
-# Exam Battle 通訊協定（v0.9）
+# Exam Battle 通訊協定（v0.10）
 
 狀態：**第八階段實作版**（第四階段多人競賽延後，見 DECISIONS.md D-022；第六階段沒有協定變動）。擁有者：architect。變更須同步記錄於 DECISIONS.md。
+
+v0.10 相對 v0.9：題目圖片（D-043、D-044）。新增 `UPLOAD_IMAGE`／`IMAGE_SAVED`、`GET_IMAGE`／`IMAGE`（第 3.9 節）與錯誤碼 `IMAGE_NOT_FOUND`、`IMAGE_INVALID`；`QuestionData` 加上 `imageId`、`passageImageId`，`OptionData`、`PracticeOption` 加上 `imageId`，`PracticeQuestion` 加上 `imageId`、`passageImageId`；`UPDATE_GROUP`、`GROUP_SAVED` 加上 `imageId`；`IMPORT_QUESTIONS` 加上 `groupImageIds`；題目文字或題幹圖至少一個、選項文字或選項圖至少一個；單行上限調為 2,097,152 字元。新欄位都可以省略，舊的請求格式仍然有效。
 
 v0.9 相對 v0.8：公開／私人題庫與管理員下架（D-039、D-040）。`ExamSummary` 加上 `visibility`、`takenDown`；`ExamRequest` 加上 `visibility`；`LIST_EXAMS` 加上 `keyword`、`mineOnly`（D-041）；新增 `TAKE_DOWN_EXAM`；`LOGIN_OK` 加上 `admin`；新增錯誤碼 `NOT_ADMIN`、`EXAM_TAKEN_DOWN`。看不到的私人考卷一律回 `EXAM_NOT_FOUND`。
 
@@ -23,7 +25,7 @@ v0.3 相對 v0.2 的破壞性變更：
 
 - TCP（Java Socket），文字串流，編碼 **UTF-8**。
 - **一行一個 JSON 物件**，以 `\n` 結尾。JSON 內不得含未跳脫的換行（Jackson 預設輸出即符合）。
-- 單行長度上限：1,048,576 個字元（不含換行；v0.6 起，為了整批匯入由 65,536 調高，見 D-031）。超過時伺服器回 `ERROR`（`LINE_TOO_LONG`）並關閉連線。
+- 單行長度上限：2,097,152 個字元（不含換行；v0.6 為了整批匯入由 65,536 調為 1,048,576，見 D-031；v0.10 為了圖片再調高，見 D-044）。超過時伺服器回 `ERROR`（`LINE_TOO_LONG`）並關閉連線。
 - 空白行會被忽略。
 - 預設埠號：`5555`（可由啟動參數覆寫）。
 - **注意：** 目前未加密，密碼以明文傳送，只適合在受信任的網路使用（見 DECISIONS.md D-014）。
@@ -204,9 +206,11 @@ ExamSummary  {"id":7,"title":"113 學年度期中考","subject":{"id":1,"name":"
               "owner":{"userId":12,"username":"teacher","displayName":"王老師"},"questionCount":4,"unansweredCount":1,
               "visibility":"PUBLIC","takenDown":false}
 QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation":"基本加法",
-              "options":[{"id":90,"content":"1","correct":false},{"id":91,"content":"2","correct":true}],
-              "trueFalseAnswer":null,"answerSet":true,"groupId":null,"passage":null}
+              "options":[{"id":90,"content":"1","correct":false,"imageId":null},{"id":91,"content":"2","correct":true,"imageId":null}],
+              "trueFalseAnswer":null,"answerSet":true,"groupId":null,"passage":null,"imageId":null,"passageImageId":null}
 ```
+
+- 圖片（v0.10）：`imageId` 是題幹圖、`options[].imageId` 是選項圖、`passageImageId` 是題組文章圖，沒有時為 `null`。圖片本身用 `GET_IMAGE` 取得（第 3.9 節）。
 
 - `year`、`examType`、`explanation` 可為 `null`。
 - **答案只給建立者**：其他人收到的 `options[].correct` 與 `trueFalseAnswer` 一律為 `null`；`answerSet`（是否已設定答案）所有人都看得到。
@@ -226,10 +230,10 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 
 #### 答案規則
 
-- 選擇題需要 2–10 個選項，選項內容不可空白（1–1000 字元）；是非題不可有選項。
+- 選擇題需要 2–10 個選項，選項內容最多 1000 字元；選項文字與選項圖片至少要有一個（v0.10，之前選項內容不可空白）。是非題不可有選項。
 - 單選題最多 1 個正確選項，多選題不限。
 - **允許答案未設定**：選擇題沒有正確選項，或是非題 `trueFalseAnswer` 為 `null`。系統不推測答案；這類題目計入 `unansweredCount`，之後的練習與競賽不會使用。
-- 題目內容 1–5000 字元、解說最多 5000 字元、考卷名稱 1–200 字元、考試類型最多 50 字元、年份 1900–2100、分類名稱 1–50 字元。
+- 題目內容最多 5000 字元，題目文字與題幹圖片至少要有一個（v0.10）；引用不存在的圖片回 `IMAGE_NOT_FOUND`；解說最多 5000 字元、考卷名稱 1–200 字元、考試類型最多 50 字元、年份 1900–2100、分類名稱 1–50 字元。
 
 #### 訊息
 
@@ -247,7 +251,7 @@ QuestionData {"id":31,"type":"SINGLE_CHOICE","content":"1 + 1 = ?","explanation"
 | `UPDATE_QUESTION` | `{examId, questionId, question}` | `QUESTION_SAVED`（選項整組取代，選項 id 會改變） | 同上 + `QUESTION_NOT_FOUND` |
 | `DELETE_QUESTION` | `{examId, questionId}` | `QUESTION_DELETED {examId, questionId}` | 同上 |
 | `REORDER_QUESTIONS` | `{examId, questionIds:[…]}` | `EXAM_DETAIL` | 同上；清單必須恰好是考卷目前的全部題目，否則 `INVALID_PAYLOAD` |
-| `UPDATE_GROUP`（v0.7） | `{examId, groupId, passage}` | `GROUP_SAVED {examId, groupId, passage}`（同組題目一起改變） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND` |
+| `UPDATE_GROUP`（v0.7） | `{examId, groupId, passage, imageId?}`（v0.10：`imageId` 為文章圖片，null 表示沒有） | `GROUP_SAVED {examId, groupId, passage, imageId}`（同組題目一起改變） | `EXAM_NOT_FOUND`、`NOT_OWNER`、`GROUP_NOT_FOUND`、`IMAGE_NOT_FOUND` |
 
 欄位格式錯誤一律回 `INVALID_PAYLOAD`。刪除考卷時，只屬於這份考卷的題目會一併刪除。
 
@@ -330,7 +334,7 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 
 | 請求 | payload | 成功回應 | 可能的錯誤 |
 |---|---|---|---|
-| `IMPORT_QUESTIONS` | `{examId?, newExam?: {title, subjectId, year?, examType?}, questions: [QuestionData], groups?: [passage], groupIndexes?: [int?]}` | `IMPORT_DONE {exam: ExamSummary, importedCount}` | `INVALID_PAYLOAD`、`TOO_MANY_QUESTIONS`、`EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
+| `IMPORT_QUESTIONS` | `{examId?, newExam?: {title, subjectId, year?, examType?}, questions: [QuestionData], groups?: [passage], groupIndexes?: [int?], groupImageIds?: [imageId?]}` | `IMPORT_DONE {exam: ExamSummary, importedCount}` | `INVALID_PAYLOAD`、`TOO_MANY_QUESTIONS`、`EXAM_NOT_FOUND`、`NOT_OWNER`、`SUBJECT_NOT_FOUND` |
 
 - `examId`（加到自己的考卷最後）與 `newExam`（建立新考卷）必須**二選一**。
 - 每題的規則與 `ADD_QUESTION` 相同（3.5 節的答案規則），答案可以未設定。
@@ -338,7 +342,8 @@ WrongItem        {"questionId":31,"subject":SubjectInfo,"examTitle":"期中考",
 - 一次最多 200 題（`TOO_MANY_QUESTIONS`）。
 - 題目內容來自客戶端本機的 OCR 校正；原始檔案不會傳送（D-027）。
 - 題組（v0.7）：`groups` 是要建立的題組文章；`groupIndexes` 與 `questions` 一一對應，第 i 題屬於 `groups[groupIndexes[i]]`，`null` 表示不屬於題組。
-  `questions` 內的 `groupId`、`passage` 會被忽略。每個題組至少要有一題；位置超出範圍、數量不一致或文章不合規則時回 `INVALID_PAYLOAD`（「第 N 個題組：…」）。
+  `groupImageIds`（v0.10）與 `groups` 一一對應，是題組文章的圖片，`null` 表示沒有；整個清單可以省略。題目與選項的圖片直接放在 `questions` 中。圖片須先用 `UPLOAD_IMAGE` 上傳。
+  `questions` 內的 `groupId`、`passage`、`passageImageId` 會被忽略。每個題組至少要有一題；位置超出範圍、數量不一致或文章不合規則時回 `INVALID_PAYLOAD`（「第 N 個題組：…」）。
 
 ### 3.8 多人競賽（v0.8，第四階段）
 
@@ -378,6 +383,20 @@ GAME_OVER       {"gameId":"…","title":"期中考","reason":"FINISHED","questio
 - 競賽結束時，每位玩家沒有全對的題目加入錯題本；不寫入練習紀錄。
 - 競賽中：不能加入房間、不能移出玩家；玩家離開後不再出現在排行榜。房主離開或斷線時房間解散（`ROOM_CLOSED`），競賽中止，不送 `GAME_OVER`。
 
+### 3.9 題目圖片（v0.10）
+
+需要登入。圖片只能是 PNG 或 JPEG，每張最多 1 MB、寬高各最多 4000 像素（D-044）。
+
+| 請求 | payload | 成功回應 | 可能的錯誤 |
+|---|---|---|---|
+| `UPLOAD_IMAGE` | `{mime: "image/png"|"image/jpeg", data: Base64}` | `IMAGE_SAVED {imageId, width, height}` | `IMAGE_INVALID`、`INVALID_PAYLOAD` |
+| `GET_IMAGE` | `{imageId}` | `IMAGE {imageId, mime, data}` | `IMAGE_NOT_FOUND` |
+
+- `imageId` 是 32 個小寫十六進位字元，隨機產生。相同內容的圖片回傳同一個 id。
+- 知道 id 就能取圖（圖片不是答案；id 只出現在看得到的題目資料中）。
+- 上傳後 24 小時內沒有被題目、選項或題組引用的圖片會被清除（D-043）。
+- 練習、競賽、紀錄、錯題本中的題目都帶圖片 id，客戶端另外用 `GET_IMAGE` 取圖。
+
 ## 4. 錯誤碼
 
 | code | 說明 | 連線是否關閉 |
@@ -408,6 +427,8 @@ GAME_OVER       {"gameId":"…","title":"期中考","reason":"FINISHED","questio
 | `NOT_ADMIN` | 只有管理員可以下架考卷（v0.9） | 否 |
 | `EXAM_TAKEN_DOWN` | 考卷已被管理員下架，不能公開（v0.9） | 否 |
 | `TOO_MANY_QUESTIONS` | 一次匯入超過 200 題 | 否 |
+| `IMAGE_NOT_FOUND` | 圖片不存在，或 id 格式錯誤（v0.10） | 否 |
+| `IMAGE_INVALID` | 上傳的圖片不是 PNG／JPEG、超過 1 MB 或寬高超過 4000 像素（v0.10） | 否 |
 | `NO_QUESTIONS` | 沒有可以練習的題目（需已設定答案） | 否 |
 | `PRACTICE_NOT_FOUND` | 練習不存在、已交卷或已被新的練習取代 | 否 |
 | `ALREADY_ANSWERED` | 練習模式中重複作答同一題 | 否 |

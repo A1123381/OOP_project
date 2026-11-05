@@ -59,7 +59,11 @@ public final class BankRecords {
     }
 
     /** question_options 的一列（依 position 排序後放在 QuestionRecord 中）。 */
-    public record OptionRecord(long id, String content, boolean correct) {
+    public record OptionRecord(long id, String content, boolean correct, String imageId) {
+
+        public OptionRecord(long id, String content, boolean correct) {
+            this(id, content, correct, null);
+        }
     }
 
     /**
@@ -68,12 +72,19 @@ public final class BankRecords {
      */
     public record QuestionRecord(long id, QuestionType type, String content, String explanation,
                                  Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options,
-                                 Long groupId, String passage) {
+                                 Long groupId, String passage, String imageId, String passageImageId) {
 
-        /** 不屬於題組的題目。 */
+        /** 不屬於題組、沒有圖片的題目。 */
         public QuestionRecord(long id, QuestionType type, String content, String explanation,
                               Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options) {
-            this(id, type, content, explanation, trueFalseAnswer, ownerId, options, null, null);
+            this(id, type, content, explanation, trueFalseAnswer, ownerId, options, null, null, null, null);
+        }
+
+        /** 沒有圖片的題目。 */
+        public QuestionRecord(long id, QuestionType type, String content, String explanation,
+                              Boolean trueFalseAnswer, long ownerId, List<OptionRecord> options,
+                              Long groupId, String passage) {
+            this(id, type, content, explanation, trueFalseAnswer, ownerId, options, groupId, passage, null, null);
         }
 
         /** 是否已設定正確答案。 */
@@ -85,7 +96,15 @@ public final class BankRecords {
     }
 
     /** 新增或更新題目用的選項。 */
-    public record NewOption(String content, boolean correct) {
+    public record NewOption(String content, boolean correct, String imageId) {
+
+        public NewOption(String content, boolean correct) {
+            this(content, correct, null);
+        }
+    }
+
+    /** 新增題組用：文章與圖片（D-043）。 */
+    public record NewGroup(String passage, String imageId) {
     }
 
     /**
@@ -93,17 +112,38 @@ public final class BankRecords {
      * 題組：groupId 不為 null 表示加入既有題組；否則 newPassage 不為 null 表示建立新題組；兩者都是 null 表示不屬於題組。
      */
     public record NewQuestion(QuestionType type, String content, String explanation, Boolean trueFalseAnswer,
-                              long ownerId, List<NewOption> options, Long groupId, String newPassage) {
+                              long ownerId, List<NewOption> options, Long groupId, String newPassage,
+                              String imageId, String newPassageImageId) {
 
-        /** 不屬於題組的題目。 */
+        /** 不屬於題組、沒有圖片的題目。 */
         public NewQuestion(QuestionType type, String content, String explanation, Boolean trueFalseAnswer,
                            long ownerId, List<NewOption> options) {
-            this(type, content, explanation, trueFalseAnswer, ownerId, options, null, null);
+            this(type, content, explanation, trueFalseAnswer, ownerId, options, null, null, null, null);
         }
 
-        /** 換成另一個題組。 */
+        /** 沒有圖片的題目。 */
+        public NewQuestion(QuestionType type, String content, String explanation, Boolean trueFalseAnswer,
+                           long ownerId, List<NewOption> options, Long groupId, String newPassage) {
+            this(type, content, explanation, trueFalseAnswer, ownerId, options, groupId, newPassage, null, null);
+        }
+
+        /** 換成另一個題組；新題組沒有圖片。 */
         public NewQuestion withGroup(Long groupId, String newPassage) {
-            return new NewQuestion(type, content, explanation, trueFalseAnswer, ownerId, options, groupId, newPassage);
+            return new NewQuestion(type, content, explanation, trueFalseAnswer, ownerId, options, groupId, newPassage,
+                    imageId, null);
+        }
+
+        /** 這題引用的所有圖片 id（題幹、選項、新題組文章）。 */
+        public List<String> imageIds() {
+            List<String> ids = new java.util.ArrayList<>();
+            if (imageId != null) {
+                ids.add(imageId);
+            }
+            if (newPassageImageId != null) {
+                ids.add(newPassageImageId);
+            }
+            options.stream().map(NewOption::imageId).filter(java.util.Objects::nonNull).forEach(ids::add);
+            return ids;
         }
     }
 }

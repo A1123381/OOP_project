@@ -46,6 +46,29 @@ public final class ImageOcr {
         }
     }
 
+    /** 逐字位置框（自動截圖用，D-045），座標換算成頁面比例。 */
+    public java.util.List<TextBox> words(BufferedImage image) throws ExtractionException {
+        config.verify();
+        Tesseract tesseract = new Tesseract();
+        tesseract.setDatapath(config.tessdata().toString());
+        tesseract.setLanguage(config.languages());
+        tesseract.setVariable("user_defined_dpi", String.valueOf(ASSUMED_DPI));
+        try {
+            double w = image.getWidth();
+            double h = image.getHeight();
+            return tesseract.getWords(grayscale(image), net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel.RIL_WORD)
+                    .stream()
+                    .filter(word -> word.getText() != null && !word.getText().isBlank())
+                    .map(word -> {
+                        java.awt.Rectangle r = word.getBoundingBox();
+                        return new TextBox(word.getText().strip(), r.x / w, r.y / h, r.width / w, r.height / h);
+                    })
+                    .toList();
+        } catch (RuntimeException | Error e) {
+            throw new ExtractionException("OCR 辨識失敗：" + e.getMessage(), e);
+        }
+    }
+
     /** 移除中文字之間的空白、行尾空白與多餘空行。 */
     static String cleanUp(String text) {
         String[] lines = text.replace("\r\n", "\n").split("\n", -1);

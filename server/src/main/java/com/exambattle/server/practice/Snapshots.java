@@ -23,8 +23,8 @@ final class Snapshots {
     /** 題目的完整內容（含正確答案、解說與題組文章）。 */
     static QuestionData full(QuestionRecord q) {
         return new QuestionData(q.id(), q.type(), q.content(), q.explanation(),
-                q.options().stream().map(o -> new OptionData(o.id(), o.content(), o.correct())).toList(),
-                q.trueFalseAnswer(), q.answerSet(), q.groupId(), q.passage());
+                q.options().stream().map(o -> new OptionData(o.id(), o.content(), o.correct(), o.imageId())).toList(),
+                q.trueFalseAnswer(), q.answerSet(), q.groupId(), q.passage(), q.imageId(), q.passageImageId());
     }
 
     static String toJson(Object value) {

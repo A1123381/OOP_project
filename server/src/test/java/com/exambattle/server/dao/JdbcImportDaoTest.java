@@ -80,7 +80,8 @@ class JdbcImportDaoTest {
 
         long examId = imports.importQuestions(null, new NewExam("題組匯入", subjectId, null, null, userId),
                 List.of(question("獨立"), question("甲 1"), question("甲 2"), question("乙 1")),
-                List.of("文章甲", "文章乙"), java.util.Arrays.asList(null, 0, 0, 1));
+                List.of(new BankRecords.NewGroup("文章甲", null), new BankRecords.NewGroup("文章乙", null)),
+                java.util.Arrays.asList(null, 0, 0, 1));
 
         List<QuestionRecord> loaded = questions.findByExam(examId);
         assertEquals(java.util.Arrays.asList(null, "文章甲", "文章甲", "文章乙"),
@@ -102,7 +103,7 @@ class JdbcImportDaoTest {
 
         assertThrows(DataAccessException.class, () -> imports.importQuestions(null,
                 new NewExam("不應存在", subjectId, null, null, userId), List.of(question("好的"), broken),
-                List.of("文章"), java.util.Arrays.asList(0, 0)));
+                List.of(new BankRecords.NewGroup("文章", null)), java.util.Arrays.asList(0, 0)));
         assertEquals(0, count("SELECT COUNT(*) FROM question_groups WHERE created_by = ?"), "題組也回滾");
     }
 

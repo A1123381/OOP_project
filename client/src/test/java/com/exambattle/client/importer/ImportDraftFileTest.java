@@ -6,6 +6,8 @@ import com.exambattle.ocr.AnswerKey;
 import com.exambattle.ocr.DraftQuestion;
 import com.exambattle.ocr.ExtractionMethod;
 import com.exambattle.ocr.PageText;
+import com.exambattle.client.gui.model.DraftImage;
+import com.exambattle.client.gui.model.QuestionDraft;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -90,5 +92,54 @@ class ImportDraftFileTest {
         Path future = dir.resolve("future.json");
         Files.writeString(future, "{\"format\":\"" + ImportDraftFile.FORMAT + "\",\"version\":99}");
         assertThrows(IOException.class, () -> ImportDraftFile.load(future));
+    }
+
+    @Test
+    void version4KeepsLocalImagesAndGroupImage() throws Exception {
+        DraftImage map = DraftImage.local(new byte[] {1, 2, 3, 4}, "image/png");
+        DraftImage chart = DraftImage.local(new byte[] {5, 6}, "image/jpeg");
+        ImportGroup group = ImportGroup.manual("閱讀下文", 1, 2, 1);
+        group.setImage(chart);
+        ImportItem item = ImportItem.from(new DraftQuestion(1, "哪一張地圖？", List.of("", ""),
+                QuestionType.SINGLE_CHOICE, 1, List.of()), group);
+        var draft = item.draft();
+        item.setDraft(draft.withOptions(List.of(draft.options().get(0).withImage(map), draft.options().get(1).withImage(map)))
+                .withImage(chart));
+        Path file = dir.resolve("img." + ImportDraftFile.EXTENSION);
+
+        ImportDraftFile.save(file, ImportDraftFile.create("考卷.pdf", PAGES, List.of(item)));
+        List<ImportItem> loaded = ImportDraftFile.items(ImportDraftFile.load(file));
+
+        QuestionDraft back = loaded.get(0).draft();
+        assertEquals(map, back.options().get(0).image());
+        assertEquals(chart, back.image());
+        assertEquals(chart, loaded.get(0).group().image());
+        assertEquals(List.of(map, chart), ImportItem.localImages(loaded), "同內容的圖片只上傳一次");
+
+        ImportItem.applyUploaded(loaded, Map.of(map, "a".repeat(32), chart, "b".repeat(32)));
+        ImportItem.RequestParts parts = ImportItem.requestParts(loaded);
+        assertEquals("a".repeat(32), parts.questions().get(0).options().get(1).imageId());
+        assertEquals("b".repeat(32), parts.questions().get(0).imageId());
+        assertEquals(List.of("b".repeat(32)), parts.groupImageIds());
+    }
+
+    @Test
+    void readsVersion3DraftsWithoutImages() throws Exception {
+        Path file = dir.resolve("v3.json");
+        Files.writeString(file, """
+                {"format":"exam-battle-import-draft","version":3,"fileName":"x.pdf","createdAt":"2026-11-01T00:00:00Z",
+                 "pages":[],"groups":[{"passage":"文章","firstNumber":1,"lastNumber":1,"sourcePage":1,"warnings":[]}],
+                 "items":[{"include":true,"imported":false,"number":1,"sourcePage":1,"warnings":[],"type":"SINGLE_CHOICE",
+                           "content":"題目","explanation":"","options":[{"content":"甲","correct":true},{"content":"乙","correct":false}],
+                           "trueFalseAnswer":null,"group":0,"unsupported":false}]}""");
+
+        List<ImportItem> items = ImportDraftFile.items(ImportDraftFile.load(file));
+
+        assertEquals(1, items.size());
+        assertEquals(null, items.get(0).draft().image());
+        assertEquals(null, items.get(0).draft().options().get(0).image());
+        assertEquals(null, items.get(0).group().image());
+        assertTrue(ImportItem.localImages(items).isEmpty());
+        assertEquals(ImportItem.Status.READY, items.get(0).status());
     }
 }

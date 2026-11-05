@@ -48,6 +48,6 @@ public interface QuestionDao {
     /** 考卷中是否有題目屬於這個題組。 */
     boolean isGroupInExam(long examId, long groupId);
 
-    /** 修改題組文章（同組的題目一起改變）。 */
-    void updatePassage(long groupId, String passage);
+    /** 修改題組文章與圖片（同組的題目一起改變）；imageId 為 null 表示沒有圖片。 */
+    void updatePassage(long groupId, String passage, String imageId);
 }

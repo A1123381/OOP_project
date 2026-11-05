@@ -4,6 +4,7 @@ import com.exambattle.common.protocol.payload.LeaveReason;
 import com.exambattle.server.auth.AuthService;
 import com.exambattle.server.auth.PasswordHasher;
 import com.exambattle.server.bank.ExamService;
+import com.exambattle.server.bank.ImageService;
 import com.exambattle.server.bank.SubjectService;
 import com.exambattle.server.dao.Repositories;
 import com.exambattle.server.handler.BankHandler;
@@ -24,7 +25,7 @@ import java.time.Clock;
  */
 record ServerContext(Object lock, ClientRegistry registry, RoomManager rooms,
                      AuthHandler auth, RoomHandler roomHandler, ChatHandler chat, BankHandler bank,
-                     PracticeHandler practice, GameManager games, GameHandler game) {
+                     PracticeHandler practice, GameManager games, GameHandler game, ImageService images) {
 
     static ServerContext create(ServerConfig config, Repositories repos, Clock clock) {
         Object lock = new Object();
@@ -32,13 +33,14 @@ record ServerContext(Object lock, ClientRegistry registry, RoomManager rooms,
         RoomManager rooms = new RoomManager(lock, new RoomCodeGenerator(), config.maxRoomPlayers());
         AuthService authService = new AuthService(repos.users(), new PasswordHasher(config.passwordIterations()));
         GameManager games = new GameManager(rooms, repos, config.gameTiming(), clock);
+        ImageService images = new ImageService(repos.images(), clock);
         return new ServerContext(lock, registry, rooms,
                 new AuthHandler(authService, registry),
                 new RoomHandler(rooms),
                 new ChatHandler(lock, registry, rooms, clock),
-                new BankHandler(new SubjectService(repos.subjects()), new ExamService(repos)),
+                new BankHandler(new SubjectService(repos.subjects()), new ExamService(repos), images),
                 new PracticeHandler(new PracticeService(repos, clock)),
-                games, new GameHandler(games));
+                games, new GameHandler(games), images);
     }
 
     /** 連線結束：清除進行中的練習，先離開房間（通知同房的人），再離線（通知所有已登入者）。 */

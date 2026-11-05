@@ -20,6 +20,9 @@ import com.exambattle.common.protocol.payload.UserInfo;
 import com.exambattle.server.Session;
 import com.exambattle.server.bank.BankException;
 import com.exambattle.server.bank.ExamService;
+import com.exambattle.server.bank.ImageService;
+import com.exambattle.common.protocol.bank.ImageRef;
+import com.exambattle.common.protocol.bank.ImageUpload;
 import com.exambattle.server.bank.SubjectService;
 
 import java.util.EnumSet;
@@ -38,14 +41,16 @@ public final class BankHandler {
             MessageType.CREATE_EXAM, MessageType.UPDATE_EXAM, MessageType.DELETE_EXAM,
             MessageType.ADD_QUESTION, MessageType.UPDATE_QUESTION, MessageType.DELETE_QUESTION,
             MessageType.REORDER_QUESTIONS, MessageType.IMPORT_QUESTIONS, MessageType.UPDATE_GROUP,
-            MessageType.TAKE_DOWN_EXAM);
+            MessageType.TAKE_DOWN_EXAM, MessageType.UPLOAD_IMAGE, MessageType.GET_IMAGE);
 
     private final SubjectService subjects;
     private final ExamService exams;
+    private final ImageService images;
 
-    public BankHandler(SubjectService subjects, ExamService exams) {
+    public BankHandler(SubjectService subjects, ExamService exams, ImageService images) {
         this.subjects = subjects;
         this.exams = exams;
+        this.images = images;
     }
 
     public void handle(Session session, MessageType type, Message message) throws ProtocolException {
@@ -101,6 +106,10 @@ public final class BankHandler {
                         exams.updateGroup(message.payloadAs(GroupRequest.class), user));
                 case TAKE_DOWN_EXAM -> Message.of(MessageType.EXAM_SAVED, requestId,
                         exams.takeDown(message.payloadAs(TakeDownRequest.class), user));
+                case UPLOAD_IMAGE -> Message.of(MessageType.IMAGE_SAVED, requestId,
+                        images.upload(user.userId(), message.payloadAs(ImageUpload.class)));
+                case GET_IMAGE -> Message.of(MessageType.IMAGE, requestId,
+                        images.get(message.payloadAs(ImageRef.class).imageId()));
                 default -> throw new IllegalArgumentException("不是題庫訊息: " + type);
             };
             session.send(reply);

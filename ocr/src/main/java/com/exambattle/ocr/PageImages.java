@@ -18,6 +18,8 @@ public final class PageImages {
 
     /** 顯示用的解析度。 */
     public static final float DISPLAY_DPI = 110f;
+    /** 截取題目圖片（自動截圖、框選）用的解析度，與 OCR 相同（D-045）。 */
+    public static final float CROP_DPI = 200f;
 
     private PageImages() {
     }

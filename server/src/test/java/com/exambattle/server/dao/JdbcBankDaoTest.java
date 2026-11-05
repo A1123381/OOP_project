@@ -62,6 +62,7 @@ class JdbcBankDaoTest {
                     "DELETE FROM exams WHERE created_by = ?",
                     "DELETE FROM questions WHERE created_by = ?",
                     "DELETE FROM question_groups WHERE created_by = ?",
+                    "DELETE FROM images WHERE created_by = ?",
                     "DELETE FROM subjects WHERE created_by = ?",
                     "DELETE FROM users WHERE id = ?")) {
                 try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -177,7 +178,7 @@ class JdbcBankDaoTest {
         assertTrue(questions.isGroupInExam(examId, groupId));
         assertEquals(1, countGroups(groupId));
 
-        questions.updatePassage(groupId, "改過的文章");
+        questions.updatePassage(groupId, "改過的文章", null);
         assertEquals(List.of("改過的文章", "改過的文章"), questions.findByExam(examId).stream().limit(2)
                 .map(QuestionRecord::passage).toList(), "文章只存一份");
 
@@ -204,6 +205,39 @@ class JdbcBankDaoTest {
                 return rs.getInt(1);
             }
         }
+    }
+
+    @Test
+    void imagesAreDeduplicatedLinkedAndCleanedUp() throws Exception {
+        JdbcImageDao images = new JdbcImageDao(database);
+        java.time.Instant old = java.time.Instant.parse("2026-01-01T00:00:00Z");
+        ImageDao.ImageRecord first = image(old);
+        assertEquals(first.id(), images.saveOrGet(first).id());
+        ImageDao.ImageRecord sameContent = new ImageDao.ImageRecord(prefix.replace("_", "0").repeat(4).substring(0, 32),
+                first.sha256(), first.mime(), 1, 1, first.bytes(), userId, old);
+        assertEquals(first.id(), images.saveOrGet(sameContent).id(), "相同 sha256 回傳既有的圖片");
+        ImageDao.ImageRecord unused = images.saveOrGet(image(old));
+        assertEquals(java.util.Set.of(first.id()), images.existing(List.of(first.id(), "f".repeat(32))));
+
+        long examId = exams.create(new NewExam("圖片", subjectId, null, null, userId)).id();
+        QuestionRecord q = questions.createInExam(examId, new NewQuestion(QuestionType.SINGLE_CHOICE, "", null, null, userId,
+                List.of(new NewOption("", true, first.id()), new NewOption("乙", false)), null, "文章", first.id(), first.id()));
+        assertEquals(first.id(), q.imageId());
+        assertEquals(first.id(), q.passageImageId());
+        assertEquals(first.id(), q.options().get(0).imageId());
+
+        images.deleteUnreferencedBefore(java.time.Instant.parse("2026-06-01T00:00:00Z"));
+        assertTrue(images.find(first.id()).isPresent(), "被引用的圖片保留");
+        assertTrue(images.find(unused.id()).isEmpty(), "未引用的舊圖片清除");
+        assertEquals(first.bytes().length, images.find(first.id()).orElseThrow().bytes().length);
+    }
+
+    private ImageDao.ImageRecord image(java.time.Instant at) {
+        byte[] bytes = new byte[64];
+        new java.security.SecureRandom().nextBytes(bytes);
+        String id = java.util.HexFormat.of().formatHex(java.util.Arrays.copyOf(bytes, 16));
+        String sha = java.util.HexFormat.of().formatHex(bytes) ;
+        return new ImageDao.ImageRecord(id, sha.substring(0, 64), "image/png", 1, 1, bytes, userId, at);
     }
 
     private int countOptions(long questionId) throws Exception {

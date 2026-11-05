@@ -43,17 +43,23 @@ final class QuestionEditor {
     private final HBox tfBox;
     private final List<OptionRow> rows = new ArrayList<>();
     private ToggleGroup singleGroup = new ToggleGroup();
+    private final ImageCache cache;
+    private final ImageSlot stemImage;
+    private ImageSlot.FrameHandler frameHandler;
     private Runnable onChange = () -> { };
     private boolean loading;
 
-    /** 一列選項：內容與「正確」標記（單選為 RadioButton，多選為 CheckBox）。 */
-    private record OptionRow(HBox node, TextField text, ButtonBase mark) {
+    /** 一列選項：內容、「正確」標記（單選為 RadioButton，多選為 CheckBox）與選項圖片。 */
+    private record OptionRow(HBox node, TextField text, ButtonBase mark, ImageSlot image) {
         boolean correct() {
             return mark instanceof Toggle t ? t.isSelected() : ((CheckBox) mark).isSelected();
         }
     }
 
-    QuestionEditor() {
+    QuestionEditor(ImageCache cache) {
+        this.cache = cache;
+        this.stemImage = new ImageSlot(cache, "題目", 320);
+        stemImage.setOnChange(this::changed);
         type.getItems().setAll(QuestionType.values());
         type.setPromptText("請選擇題型");
         type.setConverter(new StringConverter<>() {
@@ -96,8 +102,10 @@ final class QuestionEditor {
         content.textProperty().addListener((obs, a, b) -> changed());
         explanation.textProperty().addListener((obs, a, b) -> changed());
 
+        Label stemHint = new Label("題目圖片（例如圖表、示意圖；有圖片時題目文字可以空白）");
+        stemHint.setStyle("-fx-text-fill: #667;");
         root = new VBox(10, new HBox(10, new Label("題型"), type), new Label("題目"), content,
-                optionsBox, tfBox, new Label("解說"), explanation);
+                new HBox(10, stemImage.root(), stemHint), optionsBox, tfBox, new Label("解說"), explanation);
     }
 
     Parent root() {
@@ -107,6 +115,13 @@ final class QuestionEditor {
     /** 每次內容變動時呼叫（載入題目時不會呼叫）。 */
     void setOnChange(Runnable onChange) {
         this.onChange = onChange;
+    }
+
+    /** 匯入校正時可以從原始頁面框選圖片（D-043）。 */
+    void setFrameHandler(ImageSlot.FrameHandler handler) {
+        this.frameHandler = handler;
+        stemImage.setFrameHandler(handler);
+        rows.forEach(r -> r.image().setFrameHandler(handler));
     }
 
     void setEditable(boolean editable) {
@@ -119,12 +134,13 @@ final class QuestionEditor {
         try {
             type.setValue(draft.type());
             content.setText(draft.content());
+            stemImage.load(draft.image());
             explanation.setText(draft.explanation() == null ? "" : draft.explanation());
             rows.clear();
             optionRows.getChildren().clear();
             singleGroup = new ToggleGroup();
             for (QuestionDraft.Option option : draft.options()) {
-                addRow(option.content(), option.correct());
+                addRow(option.content(), option.correct(), option.image());
             }
             Boolean answer = draft.trueFalseAnswer();
             (answer == null ? tfUnset : answer ? tfTrue : tfFalse).setSelected(true);
@@ -137,10 +153,11 @@ final class QuestionEditor {
     /** 目前編輯中的內容。 */
     QuestionDraft current() {
         List<QuestionDraft.Option> options = rows.stream()
-                .map(r -> new QuestionDraft.Option(r.text().getText(), r.correct()))
+                .map(r -> new QuestionDraft.Option(r.text().getText(), r.correct(), r.image().value()))
                 .toList();
         Boolean tf = tfTrue.isSelected() ? Boolean.TRUE : tfFalse.isSelected() ? Boolean.FALSE : null;
-        return new QuestionDraft(type.getValue(), content.getText(), explanation.getText(), options, tf);
+        return new QuestionDraft(type.getValue(), content.getText(), explanation.getText(), options, tf,
+                stemImage.value());
     }
 
     private void changed() {
@@ -150,6 +167,10 @@ final class QuestionEditor {
     }
 
     private void addRow(String text, boolean correct) {
+        addRow(text, correct, null);
+    }
+
+    private void addRow(String text, boolean correct, com.exambattle.client.gui.model.DraftImage image) {
         if (rows.size() >= Protocol.MAX_OPTIONS) {
             Dialogs.error("最多 " + Protocol.MAX_OPTIONS + " 個選項");
             return;
@@ -158,8 +179,15 @@ final class QuestionEditor {
         HBox.setHgrow(field, Priority.ALWAYS);
         ButtonBase mark = newMark(correct);
         Button remove = new Button("刪除");
-        HBox node = new HBox(8, mark, field, remove);
-        OptionRow row = new OptionRow(node, field, mark);
+        ImageSlot slot = new ImageSlot(cache, "選項 " + (char) ('A' + rows.size()), 160);
+        slot.load(image);
+        slot.setOnChange(this::changed);
+        slot.setFrameHandler(frameHandler);
+        VBox textAndImage = new VBox(4, field, slot.root());
+        HBox.setHgrow(textAndImage, Priority.ALWAYS);
+        HBox node = new HBox(8, mark, textAndImage, remove);
+        node.setAlignment(javafx.geometry.Pos.TOP_LEFT);
+        OptionRow row = new OptionRow(node, field, mark, slot);
         remove.setOnAction(e -> {
             rows.remove(row);
             optionRows.getChildren().remove(node);
@@ -191,6 +219,7 @@ final class QuestionEditor {
         if (after != null && after != QuestionType.TRUE_FALSE && before != after) {
             List<String> texts = rows.stream().map(r -> r.text().getText()).toList();
             List<Boolean> marks = rows.stream().map(OptionRow::correct).toList();
+            List<com.exambattle.client.gui.model.DraftImage> images = rows.stream().map(r -> r.image().value()).toList();
             loading = true;
             try {
                 rows.clear();
@@ -204,7 +233,7 @@ final class QuestionEditor {
                         correct = !kept;
                         kept = true;
                     }
-                    addRow(defaults.get(i), correct);
+                    addRow(defaults.get(i), correct, i < images.size() ? images.get(i) : null);
                 }
             } finally {
                 loading = false;
@@ -224,7 +253,7 @@ final class QuestionEditor {
 
     private void relabel() {
         for (int i = 0; i < rows.size(); i++) {
-            rows.get(i).text().setPromptText("選項 " + (char) ('A' + i));
+            rows.get(i).text().setPromptText("選項 " + (char) ('A' + i) + "（有圖片時可以空白）");
         }
         addOption.setDisable(rows.size() >= Protocol.MAX_OPTIONS);
     }

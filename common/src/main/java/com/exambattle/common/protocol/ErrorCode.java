@@ -35,6 +35,8 @@ public enum ErrorCode {
     TOO_MANY_QUESTIONS,
     NOT_ADMIN,
     EXAM_TAKEN_DOWN,
+    IMAGE_NOT_FOUND,
+    IMAGE_INVALID,
 
     // 練習
     NO_QUESTIONS,

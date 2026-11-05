@@ -3,6 +3,7 @@ package com.exambattle.client.gui.model;
 import com.exambattle.common.protocol.bank.OptionData;
 import com.exambattle.common.protocol.bank.QuestionData;
 import com.exambattle.common.protocol.bank.QuestionType;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -85,5 +86,49 @@ class QuestionDraftTest {
         assertEquals("期中考", request.title());
         assertNull(request.year());
         assertNull(request.examType());
+    }
+
+    private static final DraftImage MAP = DraftImage.local(new byte[] {9, 8, 7}, "image/png");
+
+    @Test
+    void optionsAndStemMayBeImagesInsteadOfText() {
+        List<QuestionDraft.Option> options = List.of(new QuestionDraft.Option("", false, MAP),
+                new QuestionDraft.Option("", true, DraftImage.local(new byte[] {1}, "image/png")));
+        QuestionDraft draft = new QuestionDraft(QuestionType.SINGLE_CHOICE, "", "", options, null, MAP);
+
+        assertTrue(draft.validate().isEmpty(), "選項只有圖片、題目只有圖片都可以：" + draft.validate());
+        assertEquals(3, draft.pendingImages().size());
+
+        QuestionDraft noText = new QuestionDraft(QuestionType.SINGLE_CHOICE, "", "",
+                List.of(new QuestionDraft.Option("", false), new QuestionDraft.Option("B", true)), null);
+        assertTrue(noText.validate().isPresent(), "沒有文字也沒有圖片的題目與選項不行");
+    }
+
+    @Test
+    void imagesMustBeUploadedBeforeConversion() {
+        QuestionDraft draft = new QuestionDraft(QuestionType.SINGLE_CHOICE, "看圖作答", "",
+                List.of(new QuestionDraft.Option("", false, MAP), new QuestionDraft.Option("乙", true)), null, MAP);
+
+        assertThrows(IllegalStateException.class, draft::toData);
+
+        String id = "0123456789abcdef0123456789abcdef";
+        QuestionData data = draft.mapImages(i -> i.withId(id)).toData();
+        assertEquals(id, data.imageId());
+        assertEquals(id, data.options().get(0).imageId());
+        assertNull(data.options().get(1).imageId());
+        assertEquals("", data.options().get(0).content());
+    }
+
+    @Test
+    void fromDataKeepsImageIds() {
+        String id = "0123456789abcdef0123456789abcdef";
+        QuestionData q = new QuestionData(5L, QuestionType.SINGLE_CHOICE, "題", null,
+                List.of(new OptionData(1L, "", true, id), new OptionData(2L, "B", false, null)), null, true, null, null, id, null);
+
+        QuestionDraft draft = QuestionDraft.from(q);
+
+        assertEquals(id, draft.image().imageId());
+        assertEquals(id, draft.options().get(0).image().imageId());
+        assertTrue(draft.pendingImages().isEmpty(), "已在伺服器上的圖片不用重新上傳");
     }
 }

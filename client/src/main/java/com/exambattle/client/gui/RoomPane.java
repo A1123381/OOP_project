@@ -431,7 +431,8 @@ final class RoomPane {
         } else {
             for (int i = 0; i < pq.options().size(); i++) {
                 PracticeOption o = pq.options().get(i);
-                String text = com.exambattle.client.gui.model.ResultText.letter(i) + ". " + o.content();
+                String text = ImageViews.optionText(com.exambattle.client.gui.model.ResultText.letter(i), o.content(),
+                        o.imageId());
                 javafx.scene.control.ButtonBase b;
                 if (pq.type() == QuestionType.SINGLE_CHOICE) {
                     RadioButton r = new RadioButton(text);
@@ -444,6 +445,7 @@ final class RoomPane {
                     b = c;
                 }
                 b.setUserData(o.id());
+                ImageViews.decorate((javafx.scene.control.Labeled) b, session.images(), o.imageId(), ImageViews.OPTION_WIDTH);
                 inputs.add(b);
             }
         }
@@ -472,10 +474,11 @@ final class RoomPane {
         });
 
         VBox body = new VBox(14, top, type);
-        if (pq.passage() != null) {
-            body.getChildren().add(PassageView.create(pq.passage(), 15, true));
+        if (pq.passage() != null || pq.passageImageId() != null) {
+            body.getChildren().add(PassageView.create(session.images(), pq.passage(), pq.passageImageId(), 15, true));
         }
-        body.getChildren().addAll(content, options, new HBox(12, submit, status));
+        body.getChildren().addAll(ImageViews.withImage(content, session.images(), pq.imageId(), ImageViews.STEM_WIDTH),
+                options, new HBox(12, submit, status));
         body.setPadding(new Insets(20));
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
@@ -521,13 +524,14 @@ final class RoomPane {
         if (pq != null) {
             Label content = new Label(pq.content());
             content.setWrapText(true);
-            body.getChildren().add(content);
+            body.getChildren().add(ImageViews.withImage(content, session.images(), pq.imageId(), ImageViews.STEM_WIDTH));
             for (int i = 0; i < pq.options().size(); i++) {
                 PracticeOption o = pq.options().get(i);
                 boolean correct = r.correctOptionIds().contains(o.id());
-                Label line = new Label((correct ? "✔ " : "　 ") + com.exambattle.client.gui.model.ResultText.letter(i)
-                        + ". " + o.content());
+                Label line = new Label((correct ? "✔ " : "　 ") + ImageViews.optionText(
+                        com.exambattle.client.gui.model.ResultText.letter(i), o.content(), o.imageId()));
                 line.setWrapText(true);
+                ImageViews.decorate(line, session.images(), o.imageId(), 240);
                 if (correct) {
                     line.setStyle("-fx-text-fill: #2e7d32; -fx-font-weight: bold;");
                 }

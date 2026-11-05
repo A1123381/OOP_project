@@ -1,5 +1,6 @@
 package com.exambattle.client.gui;
 
+import com.exambattle.client.gui.model.DraftImage;
 import com.exambattle.client.gui.model.QuestionGroups;
 import com.exambattle.client.gui.model.QuestionTypes;
 import com.exambattle.common.protocol.MessageType;
@@ -64,6 +65,8 @@ final class BankPane {
     private final TableView<ExamSummary> exams = new TableView<>();
     private final ListView<QuestionData> questions = new ListView<>();
     private final TextArea preview = new TextArea();
+    /** 預覽中的圖片（題組文章、題目、選項）。 */
+    private final javafx.scene.layout.FlowPane previewImages = new javafx.scene.layout.FlowPane(8, 8);
     private final Label examTitle = new Label("請從左側選擇一份考卷");
     private final ObjectProperty<ExamDetail> detail = new SimpleObjectProperty<>();
     // 搜尋（第八階段）
@@ -282,18 +285,19 @@ final class BankPane {
         preview.setPrefRowCount(8);
 
         Button add = new Button("新增題目");
-        add.setOnAction(e -> QuestionDialog.show(null, groups).ifPresent(q -> {
+        add.setOnAction(e -> QuestionDialog.show(session.images(), null, groups).ifPresent(result -> {
             long examId = detail.get().exam().id();
-            session.call(MessageType.ADD_QUESTION, new QuestionRequest(examId, null, q), QuestionSaved.class,
-                    saved -> reloadDetail(saved.question().id()));
+            withUploadedImages(result, q -> session.call(MessageType.ADD_QUESTION, new QuestionRequest(examId, null, q),
+                    QuestionSaved.class, saved -> reloadDetail(saved.question().id())));
         }));
         Button edit = new Button("編輯");
         edit.setOnAction(e -> {
             QuestionData selected = questions.getSelectionModel().getSelectedItem();
-            QuestionDialog.show(selected, groups).ifPresent(q -> {
+            QuestionDialog.show(session.images(), selected, groups).ifPresent(result -> {
                 long examId = detail.get().exam().id();
-                session.call(MessageType.UPDATE_QUESTION, new QuestionRequest(examId, selected.id(), q),
-                        QuestionSaved.class, saved -> reloadDetail(saved.question().id()));
+                withUploadedImages(result, q -> session.call(MessageType.UPDATE_QUESTION,
+                        new QuestionRequest(examId, selected.id(), q), QuestionSaved.class,
+                        saved -> reloadDetail(saved.question().id())));
             });
         });
         Button delete = new Button("刪除");
@@ -337,7 +341,7 @@ final class BankPane {
         VBox.setVgrow(questions, Priority.ALWAYS);
         VBox box = new VBox(8, examTitle, readOnly, questions,
                 new FlowPane(8, 8, add, edit, delete, up, down, editPassage),
-                new Label("題目內容"), preview);
+                new Label("題目內容"), preview, previewImages);
         box.setPadding(new Insets(12));
         return box;
     }
@@ -377,6 +381,21 @@ final class BankPane {
     }
 
     /** 修改題組文章；同組的題目一起改變（UPDATE_GROUP）。 */
+    /** 先上傳對話框中新加入的圖片（D-044），再組成要送出的題目。 */
+    private void withUploadedImages(QuestionDialog.Result result, java.util.function.Consumer<QuestionData> send) {
+        java.util.List<DraftImage> pending = new java.util.ArrayList<>(result.draft().pendingImages());
+        if (result.newPassageImage() != null && result.newPassageImage().pending()) {
+            pending.add(result.newPassageImage());
+        }
+        ImageUploader.upload(session, pending, null, ids -> {
+            java.util.function.UnaryOperator<DraftImage> withId = i -> ids.containsKey(i) ? i.withId(ids.get(i)) : i;
+            QuestionData data = result.draft().mapImages(withId).toData();
+            String passageImage = result.newPassageImage() == null ? null : withId.apply(result.newPassageImage()).imageId();
+            send.accept(result.newPassage() != null ? data.withGroup(null, result.newPassage(), passageImage)
+                    : data.withGroup(result.groupId(), null));
+        }, Dialogs::error);
+    }
+
     private void editPassage(QuestionData q) {
         if (q == null || q.groupId() == null) {
             return;
@@ -384,11 +403,13 @@ final class BankPane {
         TextArea text = new TextArea(q.passage());
         text.setWrapText(true);
         text.setPrefRowCount(16);
+        ImageSlot image = new ImageSlot(session.images(), "題組文章", 240);
+        image.load(q.passageImageId() == null ? null : DraftImage.uploaded(q.passageImageId()));
         Dialog<String> dialog = new Dialog<>();
         dialog.setTitle("編輯題組文章");
         dialog.setHeaderText(QuestionGroups.labelOf(groups, q.groupId()) + "：修改後同組的題目一起改變（克漏字的空格可寫成【11】）");
         dialog.setResizable(true);
-        dialog.getDialogPane().setContent(text);
+        dialog.getDialogPane().setContent(new VBox(8, text, new Label("題組文章圖片"), image.root()));
         dialog.getDialogPane().setPrefWidth(640);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         dialog.getDialogPane().lookupButton(ButtonType.OK).addEventFilter(ActionEvent.ACTION, e ->
@@ -397,9 +418,23 @@ final class BankPane {
                     e.consume();
                 }));
         dialog.setResultConverter(b -> b == ButtonType.OK ? text.getText() : null);
-        dialog.showAndWait().ifPresent(passage ->
-                session.call(MessageType.UPDATE_GROUP, new GroupRequest(detail.get().exam().id(), q.groupId(), passage),
-                        GroupSaved.class, saved -> reloadDetail(q.id())));
+        dialog.showAndWait().ifPresent(passage -> {
+            DraftImage img = image.value();
+            java.util.List<DraftImage> pending = img != null && img.pending() ? java.util.List.of(img) : java.util.List.of();
+            ImageUploader.upload(session, pending, null, ids -> {
+                String imageId = img == null ? null : ids.containsKey(img) ? ids.get(img) : img.imageId();
+                session.call(MessageType.UPDATE_GROUP,
+                        new GroupRequest(detail.get().exam().id(), q.groupId(), passage, imageId),
+                        GroupSaved.class, saved -> reloadDetail(q.id()));
+            }, Dialogs::error);
+        });
+    }
+
+    private void addPreviewImage(String label, String imageId) {
+        javafx.scene.Node view = ImageViews.of(session.images(), imageId, 150);
+        if (view != null) {
+            previewImages.getChildren().add(new VBox(2, new Label(label), view));
+        }
     }
 
     private void move(int delta) {
@@ -428,9 +463,15 @@ final class BankPane {
     }
 
     private void showPreview(QuestionData q) {
+        previewImages.getChildren().clear();
         if (q == null) {
             preview.clear();
             return;
+        }
+        addPreviewImage("文章圖", q.passageImageId());
+        addPreviewImage("題目圖", q.imageId());
+        for (int i = 0; i < q.options().size(); i++) {
+            addPreviewImage("選項 " + (char) ('A' + i), q.options().get(i).imageId());
         }
         boolean owner = detail.get() != null && isMine(detail.get().exam());
         StringBuilder text = new StringBuilder();
@@ -446,8 +487,8 @@ final class BankPane {
         } else {
             for (int i = 0; i < q.options().size(); i++) {
                 OptionData o = q.options().get(i);
-                text.append(Boolean.TRUE.equals(o.correct()) ? "✔ " : "　 ").append((char) ('A' + i)).append(". ")
-                        .append(o.content()).append("\n");
+                text.append(Boolean.TRUE.equals(o.correct()) ? "✔ " : "　 ")
+                        .append(ImageViews.optionText(String.valueOf((char) ('A' + i)), o.content(), o.imageId())).append("\n");
             }
         }
         if (!q.answerSet()) {

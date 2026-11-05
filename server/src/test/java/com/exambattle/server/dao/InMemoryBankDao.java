@@ -31,7 +31,7 @@ public final class InMemoryBankDao {
     /** 考卷 id → 題目 id（依順序）。 */
     private final Map<Long, List<Long>> examQuestions = new LinkedHashMap<>();
     /** 題組 id → 文章。題目記錄只存 groupId，讀取時才填入文章（文章修改後同組一起改變）。 */
-    private final Map<Long, String> groups = new LinkedHashMap<>();
+    private final Map<Long, BankRecords.NewGroup> groups = new LinkedHashMap<>();
     private long nextId = 1;
 
     private final SubjectDao subjectDao = new Subjects();
@@ -67,9 +67,9 @@ public final class InMemoryBankDao {
             synchronized (InMemoryBankDao.this) {
                 long target = newExam != null ? examDao.create(newExam).id() : examId;
                 List<Long> groupIds = new ArrayList<>();
-                for (String passage : passages) {
+                for (BankRecords.NewGroup group : passages) {
                     long id = nextId++;
-                    groups.put(id, passage);
+                    groups.put(id, group);
                     groupIds.add(id);
                 }
                 for (int i = 0; i < list.size(); i++) {
@@ -270,9 +270,9 @@ public final class InMemoryBankDao {
         }
 
         @Override
-        public void updatePassage(long groupId, String passage) {
+        public void updatePassage(long groupId, String passage, String imageId) {
             synchronized (InMemoryBankDao.this) {
-                groups.replace(groupId, passage);
+                groups.replace(groupId, new BankRecords.NewGroup(passage, imageId));
             }
         }
     }
@@ -332,21 +332,35 @@ public final class InMemoryBankDao {
         if (q.groupId() == null) {
             return q;
         }
+        BankRecords.NewGroup group = groups.get(q.groupId());
         return new QuestionRecord(q.id(), q.type(), q.content(), q.explanation(), q.trueFalseAnswer(), q.ownerId(),
-                q.options(), q.groupId(), groups.get(q.groupId()));
+                q.options(), q.groupId(), group == null ? null : group.passage(), q.imageId(),
+                group == null ? null : group.imageId());
+    }
+
+    /** 題目、選項、題組引用的圖片 id（給 InMemoryImageDao 判斷是否可以清除）。 */
+    synchronized java.util.Set<String> referencedImageIds() {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (QuestionRecord q : questions.values()) {
+            ids.add(q.imageId());
+            q.options().forEach(o -> ids.add(o.imageId()));
+        }
+        groups.values().forEach(g -> ids.add(g.imageId()));
+        ids.remove(null);
+        return ids;
     }
 
     private QuestionRecord toRecord(long id, NewQuestion q) {
         List<OptionRecord> options = new ArrayList<>();
         for (NewOption option : q.options()) {
-            options.add(new OptionRecord(nextId++, option.content(), option.correct()));
+            options.add(new OptionRecord(nextId++, option.content(), option.correct(), option.imageId()));
         }
         Long groupId = q.groupId();
         if (groupId == null && q.newPassage() != null) {
             groupId = nextId++;
-            groups.put(groupId, q.newPassage());
+            groups.put(groupId, new BankRecords.NewGroup(q.newPassage(), q.newPassageImageId()));
         }
         return new QuestionRecord(id, q.type(), q.content(), q.explanation(), q.trueFalseAnswer(), q.ownerId(),
-                List.copyOf(options), groupId, null);
+                List.copyOf(options), groupId, null, q.imageId(), null);
     }
 }

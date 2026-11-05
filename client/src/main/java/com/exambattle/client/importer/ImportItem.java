@@ -1,5 +1,6 @@
 package com.exambattle.client.importer;
 
+import com.exambattle.client.gui.model.DraftImage;
 import com.exambattle.client.gui.model.QuestionDraft;
 import com.exambattle.common.protocol.bank.QuestionData;
 import com.exambattle.common.protocol.bank.QuestionType;
@@ -35,11 +36,12 @@ public final class ImportItem {
      */
     public record Data(boolean include, boolean imported, Integer number, int sourcePage, List<String> warnings,
                        QuestionType type, String content, String explanation, List<QuestionDraft.Option> options,
-                       Boolean trueFalseAnswer, Integer group, boolean unsupported) {
+                       Boolean trueFalseAnswer, Integer group, boolean unsupported, DraftImage image) {
     }
 
-    /** 匯入請求的題目部分：questions 與 groupIndexes 一一對應（見 ImportRequest）。 */
-    public record RequestParts(List<QuestionData> questions, List<String> groups, List<Integer> groupIndexes) {
+    /** 匯入請求的題目部分：questions 與 groupIndexes 一一對應、groups 與 groupImageIds 一一對應（見 ImportRequest）。 */
+    public record RequestParts(List<QuestionData> questions, List<String> groups, List<Integer> groupIndexes,
+                               List<String> groupImageIds) {
     }
 
     private boolean include;
@@ -100,7 +102,7 @@ public final class ImportItem {
         return new ImportItem(d.include(), d.imported(), d.number(), d.sourcePage(),
                 d.warnings() == null ? List.of() : d.warnings(),
                 new QuestionDraft(d.type(), nullToEmpty(d.content()), nullToEmpty(d.explanation()), options,
-                        d.trueFalseAnswer()), group, d.unsupported());
+                        d.trueFalseAnswer(), d.image()), group, d.unsupported());
     }
 
     public static ImportItem fromData(Data d) {
@@ -110,7 +112,7 @@ public final class ImportItem {
     /** groupIndex：所屬題組在草稿 groups 中的位置。 */
     public Data toData(Integer groupIndex) {
         return new Data(include, imported, number, sourcePage, warnings, draft.type(), draft.content(),
-                draft.explanation(), draft.options(), draft.trueFalseAnswer(), groupIndex, unsupported);
+                draft.explanation(), draft.options(), draft.trueFalseAnswer(), groupIndex, unsupported, draft.image());
     }
 
     public Data toData() {
@@ -128,7 +130,57 @@ public final class ImportItem {
         return groups;
     }
 
-    /** 轉成匯入請求的題目、題組文章與每題的題組位置；只包含這些題目用到的題組。 */
+    /** 這些題目與其題組中還沒上傳的圖片（同一張圖只列一次）。 */
+    public static List<DraftImage> pendingImages(List<ImportItem> items) {
+        java.util.Set<DraftImage> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        List<DraftImage> pending = new ArrayList<>();
+        for (ImportItem item : items) {
+            item.draft().pendingImages().stream().filter(seen::add).forEach(pending::add);
+        }
+        for (ImportGroup g : groupsOf(items)) {
+            if (g.image() != null && g.image().pending() && seen.add(g.image())) {
+                pending.add(g.image());
+            }
+        }
+        return pending;
+    }
+
+    /**
+     * 這些題目與其題組中所有有本機內容的圖片（同內容只列一次）。匯入前一律重新上傳：
+     * 草稿裡記住的 id 可能已被伺服器清除（未引用超過 24 小時），而相同內容上傳會拿回同一個 id。
+     */
+    public static List<DraftImage> localImages(List<ImportItem> items) {
+        java.util.Set<DraftImage> seen = new java.util.LinkedHashSet<>();
+        for (ImportItem item : items) {
+            item.draft().mapImages(i -> {
+                if (i.bytes() != null) {
+                    seen.add(i);
+                }
+                return i;
+            });
+        }
+        for (ImportGroup g : groupsOf(items)) {
+            if (g.image() != null && g.image().bytes() != null) {
+                seen.add(g.image());
+            }
+        }
+        return new ArrayList<>(seen);
+    }
+
+    /** 上傳完成後，把題目與題組中的圖片換成帶伺服器 id 的版本。 */
+    public static void applyUploaded(List<ImportItem> items, java.util.Map<DraftImage, String> ids) {
+        java.util.function.UnaryOperator<DraftImage> withId = i -> ids.containsKey(i) ? i.withId(ids.get(i)) : i;
+        for (ImportItem item : items) {
+            item.setDraft(item.draft().mapImages(withId));
+        }
+        for (ImportGroup g : groupsOf(items)) {
+            if (g.image() != null) {
+                g.setImage(withId.apply(g.image()));
+            }
+        }
+    }
+
+    /** 轉成匯入請求的題目、題組文章與每題的題組位置；只包含這些題目用到的題組。圖片須先上傳。 */
     public static RequestParts requestParts(List<ImportItem> items) {
         List<ImportGroup> groups = groupsOf(items);
         List<QuestionData> questions = new ArrayList<>();
@@ -137,7 +189,8 @@ public final class ImportItem {
             questions.add(item.draft().toData());
             indexes.add(item.group == null ? null : indexOf(groups, item.group));
         }
-        return new RequestParts(questions, groups.stream().map(g -> g.passage().strip()).toList(), indexes);
+        return new RequestParts(questions, groups.stream().map(g -> g.passage().strip()).toList(), indexes,
+                groups.stream().map(g -> g.image() == null ? null : g.image().imageId()).toList());
     }
 
     static int indexOf(List<ImportGroup> groups, ImportGroup group) {

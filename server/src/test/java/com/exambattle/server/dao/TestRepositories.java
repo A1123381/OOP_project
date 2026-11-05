@@ -15,6 +15,6 @@ public final class TestRepositories {
         InMemoryBankDao bank = new InMemoryBankDao().withSeedSubjects();
         InMemoryPracticeDao practice = new InMemoryPracticeDao(bank);
         return new Repositories(users, bank.subjects(), bank.exams(), bank.questions(),
-                practice, practice, bank.imports());
+                practice, practice, bank.imports(), new InMemoryImageDao(bank::referencedImageIds));
     }
 }

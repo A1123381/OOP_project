@@ -1,6 +1,7 @@
 package com.exambattle.server.dao;
 
 import com.exambattle.server.dao.BankRecords.NewExam;
+import com.exambattle.server.dao.BankRecords.NewGroup;
 import com.exambattle.server.dao.BankRecords.NewQuestion;
 
 import java.sql.PreparedStatement;
@@ -20,7 +21,7 @@ public final class JdbcImportDao implements ImportDao {
     }
 
     @Override
-    public long importQuestions(Long examId, NewExam newExam, List<NewQuestion> questions, List<String> groups,
+    public long importQuestions(Long examId, NewExam newExam, List<NewQuestion> questions, List<NewGroup> groups,
                                 List<Integer> groupIndexes) {
         return database.inTransaction("匯入題目", c -> {
             long target;
@@ -49,8 +50,8 @@ public final class JdbcImportDao implements ImportDao {
                 target = examId;
             }
             List<Long> groupIds = new ArrayList<>();
-            for (String passage : groups) {
-                groupIds.add(JdbcQuestionDao.insertGroup(c, passage, questions.get(0).ownerId()));
+            for (NewGroup group : groups) {
+                groupIds.add(JdbcQuestionDao.insertGroup(c, group.passage(), group.imageId(), questions.get(0).ownerId()));
             }
             int position = JdbcQuestionDao.nextPosition(c, target);
             for (int i = 0; i < questions.size(); i++) {

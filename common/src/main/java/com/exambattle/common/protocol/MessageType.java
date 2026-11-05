@@ -61,6 +61,10 @@ public enum MessageType {
     UPDATE_GROUP(true),
     GROUP_SAVED(false),
     TAKE_DOWN_EXAM(true),
+    UPLOAD_IMAGE(true),
+    IMAGE_SAVED(false),
+    GET_IMAGE(true),
+    IMAGE(false),
 
     // 單人練習、紀錄、錯題本（第五階段）
     START_PRACTICE(true),

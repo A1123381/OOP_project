@@ -8,8 +8,8 @@ public final class Protocol {
 
     public static final int VERSION = 1;
     public static final int DEFAULT_PORT = 5555;
-    /** 單行上限（字元）；第七階段為了整批匯入由 65,536 調高（見 DECISIONS.md D-031）。 */
-    public static final int MAX_LINE_CHARS = 1_048_576;
+    /** 單行上限（字元）：第七階段為了整批匯入調為 1M（D-031），題目圖片再調為 2M（1 MB 圖片的 Base64，D-044）。 */
+    public static final int MAX_LINE_CHARS = 2_097_152;
     public static final int MAX_CHAT_CHARS = 1_000;
     public static final Duration CLIENT_PING_INTERVAL = Duration.ofSeconds(15);
     public static final Duration SERVER_IDLE_TIMEOUT = Duration.ofSeconds(45);
@@ -36,6 +36,11 @@ public final class Protocol {
     public static final int MAX_OPTION_CHARS = 1_000;
     public static final int MIN_OPTIONS = 2;
     public static final int MAX_OPTIONS = 10;
+    /** 題目圖片（D-043、D-044）：每張最多 1 MB、寬高各最多 4000 像素；客戶端上傳前縮小到寬度 1600 像素。 */
+    public static final int MAX_IMAGE_BYTES = 1_048_576;
+    public static final int MAX_IMAGE_SIDE = 4000;
+    public static final int IMAGE_TARGET_WIDTH = 1600;
+
     /** 考卷搜尋關鍵字的長度上限（第八階段）。 */
     public static final int MAX_SEARCH_KEYWORD_CHARS = 50;
     /** 題組文章（閱讀測驗、克漏字），與 question_groups.passage 一致。 */

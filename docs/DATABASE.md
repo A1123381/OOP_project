@@ -10,7 +10,7 @@
 
 > **本機狀態（2026-11-02，第八階段）：** 第 1–4 步已完成。`exam_battle`、`exam_battle_test` 資料庫、`exam_battle` 帳號、
 > 全部資料表（users、subjects、exams、questions、question_options、exam_questions、practice_records、answer_records、wrong_questions、
-> question_groups）與初始大分類都已建立；兩個資料庫都已執行 `db/migrations/001_question_groups.sql` 與 `002_visibility_admin.sql`；目前沒有管理員帳號。
+> question_groups）與初始大分類都已建立；兩個資料庫都已執行 `db/migrations/001_question_groups.sql`、`002_visibility_admin.sql` 與 `003_images.sql`（images 資料表）；目前沒有管理員帳號。
 > `config/db.properties` 已產生（帳號密碼為隨機產生，只存在該檔案中）。換電腦或重建資料庫時再照以下步驟做。
 
 ## 1. 確認 MariaDB 服務
@@ -76,13 +76,14 @@ Get-Content db\seed_subjects.sql -Raw -Encoding UTF8 | & "C:\Program Files\Maria
 |---|---|---|
 | `001_question_groups.sql` | 新增 `question_groups` 資料表、`questions.group_id` 欄位（題組，D-034） | 資料庫在題組支援之前建立 |
 | `002_visibility_admin.sql` | 新增 `exams.visibility`、`exams.taken_down`、`users.is_admin`（第八階段，D-039、D-040）；既有考卷維持公開 | 資料庫在第八階段之前建立 |
+| `003_images.sql` | 新增 `images` 資料表，以及 `questions`、`question_options`、`question_groups` 的 `image_id` 欄位（題目圖片，D-043） | 資料庫在題目圖片支援之前建立 |
 
 ```powershell
 Get-Content db\migrations\001_question_groups.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle
 Get-Content db\migrations\001_question_groups.sql -Raw -Encoding UTF8 | & "C:\Program Files\MariaDB 13.0\bin\mariadb.exe" --default-character-set=utf8mb4 -u exam_battle -p exam_battle_test
 ```
 
-執行 `002_visibility_admin.sql` 的方式相同（把檔名換掉）。升級檔可以重複執行。伺服器啟動時會檢查，缺少時顯示要執行哪個檔案。
+執行 `002_visibility_admin.sql`、`003_images.sql` 的方式相同（把檔名換掉）。升級檔可以重複執行。伺服器啟動時會檢查，缺少時顯示要執行哪個檔案。
 
 ### 設定管理員
 
@@ -138,4 +139,5 @@ mvn -pl server -am test
 | `找不到 xxx 資料表` | 尚未執行第 3 步，或升級後未執行 `db/migrations/` 中的檔案 |
 | `questions 資料表缺少 group_id 欄位` | 舊版資料庫，請執行 `db/migrations/001_question_groups.sql`（第 3 節「升級既有資料庫」） |
 | `exams 資料表缺少 visibility 欄位`、`users 資料表缺少 is_admin 欄位` | 請執行 `db/migrations/002_visibility_admin.sql` |
+| `找不到 images 資料表`、`question_options 資料表缺少 image_id 欄位` | 請執行 `db/migrations/003_images.sql` |
 | `Unknown collation: 'utf8mb4_0900_ai_ci'` | 使用了舊版 schema；請改用目前的 `db/schema.sql` |

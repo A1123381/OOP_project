@@ -20,6 +20,7 @@ import com.exambattle.server.dao.BankRecords.ExamQuery;
 import com.exambattle.server.dao.BankRecords.ExamRecord;
 import com.exambattle.server.dao.BankRecords.ExamStats;
 import com.exambattle.server.dao.BankRecords.NewExam;
+import com.exambattle.server.dao.BankRecords.NewGroup;
 import com.exambattle.server.dao.BankRecords.NewQuestion;
 import com.exambattle.server.dao.BankRecords.QuestionRecord;
 import com.exambattle.server.dao.Repositories;
@@ -123,6 +124,7 @@ public final class ExamService {
         requireOwnedExam(examId, user);
         NewQuestion valid = BankValidator.question(data, user.userId());
         requireGroupInExam(examId, valid.groupId());
+        requireImages(valid.imageIds());
         return toData(repos.questions().createInExam(examId, valid), true);
     }
 
@@ -132,6 +134,7 @@ public final class ExamService {
         requireQuestionInExam(examId, questionId);
         NewQuestion valid = BankValidator.question(data, user.userId());
         requireGroupInExam(examId, valid.groupId());
+        requireImages(valid.imageIds());
         return toData(repos.questions().update(questionId, valid), true);
     }
 
@@ -143,8 +146,10 @@ public final class ExamService {
         requireOwnedExam(request.examId(), user);
         requireGroupInExam(request.examId(), request.groupId());
         String passage = BankValidator.passage(request.passage());
-        repos.questions().updatePassage(request.groupId(), passage);
-        return new GroupSaved(request.examId(), request.groupId(), passage);
+        String imageId = BankValidator.imageId(request.imageId());
+        requireImages(imageId == null ? List.of() : List.of(imageId));
+        repos.questions().updatePassage(request.groupId(), passage, imageId);
+        return new GroupSaved(request.examId(), request.groupId(), passage, imageId);
     }
 
     public void deleteQuestion(long examId, long questionId, UserInfo user) throws BankException {
@@ -179,14 +184,26 @@ public final class ExamService {
                 throw BankException.invalid("第 " + (i + 1) + " 題：" + e.getMessage());
             }
         }
-        List<String> groups = new ArrayList<>();
-        for (int g = 0; request.groups() != null && g < request.groups().size(); g++) {
+        List<NewGroup> groups = new ArrayList<>();
+        int groupCount = request.groups() == null ? 0 : request.groups().size();
+        if (request.groupImageIds() != null && request.groupImageIds().size() != groupCount) {
+            throw BankException.invalid("groupImageIds 的數量必須與題組相同");
+        }
+        List<String> imageIds = new ArrayList<>();
+        valid.forEach(q -> imageIds.addAll(q.imageIds()));
+        for (int g = 0; g < groupCount; g++) {
             try {
-                groups.add(BankValidator.passage(request.groups().get(g)));
+                String imageId = request.groupImageIds() == null ? null
+                        : BankValidator.imageId(request.groupImageIds().get(g));
+                groups.add(new NewGroup(BankValidator.passage(request.groups().get(g)), imageId));
+                if (imageId != null) {
+                    imageIds.add(imageId);
+                }
             } catch (BankException e) {
                 throw BankException.invalid("第 " + (g + 1) + " 個題組：" + e.getMessage());
             }
         }
+        requireImages(imageIds);
         List<Integer> groupIndexes = importGroupIndexes(request.groupIndexes(), questions.size(), groups.size());
 
         NewExam newExam = null;
@@ -281,6 +298,16 @@ public final class ExamService {
         }
     }
 
+    /** 引用的圖片都必須存在（D-043）。 */
+    private void requireImages(List<String> ids) throws BankException {
+        if (ids.isEmpty()) {
+            return;
+        }
+        if (!repos.images().existing(ids).containsAll(ids)) {
+            throw new BankException(ErrorCode.IMAGE_NOT_FOUND, "找不到題目引用的圖片，請重新加入圖片");
+        }
+    }
+
     /** groupId 為 null 時不檢查；否則必須是這份考卷中某些題目所屬的題組。 */
     private void requireGroupInExam(long examId, Long groupId) throws BankException {
         if (groupId != null && !repos.questions().isGroupInExam(examId, groupId)) {
@@ -313,9 +340,10 @@ public final class ExamService {
     /** reveal 為 false 時移除正確答案，只保留「是否已設定」。 */
     static QuestionData toData(QuestionRecord q, boolean reveal) {
         List<OptionData> options = q.options().stream()
-                .map(o -> new OptionData(o.id(), o.content(), reveal ? o.correct() : null))
+                .map(o -> new OptionData(o.id(), o.content(), reveal ? o.correct() : null, o.imageId()))
                 .toList();
         return new QuestionData(q.id(), q.type(), q.content(), q.explanation(), options,
-                reveal ? q.trueFalseAnswer() : null, q.answerSet(), q.groupId(), q.passage());
+                reveal ? q.trueFalseAnswer() : null, q.answerSet(), q.groupId(), q.passage(), q.imageId(),
+                q.passageImageId());
     }
 }

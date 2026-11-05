@@ -1,5 +1,6 @@
 package com.exambattle.client.gui;
 
+import com.exambattle.client.gui.model.DraftImage;
 import com.exambattle.client.gui.model.ExamDraft;
 import com.exambattle.client.gui.model.QuestionTypes;
 import com.exambattle.client.importer.AnswerKeyApplier;
@@ -106,7 +107,7 @@ final class ImportPane {
     private final Button importButton = new Button("匯入題庫…");
     private final Label summary = new Label();
     private final ListView<ImportItem> items = new ListView<>();
-    private final QuestionEditor editor = new QuestionEditor();
+    private final QuestionEditor editor;
     private final TextField numberField = new TextField();
     private final Label problem = new Label();
     private final Label warnings = new Label();
@@ -120,6 +121,15 @@ final class ImportPane {
     private final Button joinPrevious = new Button("加入上一題的題組");
     private final Button newGroup = new Button("新增題組…");
     private final VBox groupBox;
+    private ImageSlot groupImage;
+
+    // 框選圖片（D-043）：在原始頁面上拖曳，放開後交給 framingReceiver
+    private final javafx.scene.shape.Rectangle selection = new javafx.scene.shape.Rectangle();
+    private TabPane reference;
+    private java.util.function.Consumer<DraftImage> framingReceiver;
+    private String framingTarget;
+    private double dragX;
+    private double dragY;
 
     // 對照
     private final ImageView pageImage = new ImageView();
@@ -137,6 +147,8 @@ final class ImportPane {
 
     ImportPane(GuiSession session) {
         this.session = session;
+        this.editor = new QuestionEditor(session.images());
+        editor.setFrameHandler(this::startFraming);
 
         choose.setOnAction(e -> chooseFile());
         start.setOnAction(e -> startExtraction());
@@ -216,7 +228,16 @@ final class ImportPane {
         joinPrevious.setOnAction(e -> joinPreviousGroup());
         newGroup.setOnAction(e -> createGroup());
         groupTitle.setWrapText(true);
-        groupBox = new VBox(6, groupTitle, new HBox(8, leaveGroup, joinPrevious, newGroup), passage, groupWarnings);
+        groupImage = new ImageSlot(session.images(), "題組文章", 240);
+        groupImage.setFrameHandler(this::startFraming);
+        groupImage.setOnChange(() -> {
+            if (current != null && current.group() != null) {
+                current.group().setImage(groupImage.value());
+                refreshCurrent();
+            }
+        });
+        groupBox = new VBox(6, groupTitle, new HBox(8, leaveGroup, joinPrevious, newGroup), passage, groupImage.root(),
+                groupWarnings);
         groupBox.setPadding(new Insets(8));
         groupBox.setStyle("-fx-background-color: #f3f6ee; -fx-background-radius: 4;");
 
@@ -229,7 +250,14 @@ final class ImportPane {
         // 右：原始頁面與擷取文字
         pageImage.setPreserveRatio(true);
         fitWidth.setSelected(true);
-        ScrollPane imageScroll = new ScrollPane(pageImage);
+        selection.setFill(javafx.scene.paint.Color.web("#1e88e5", 0.15));
+        selection.setStroke(javafx.scene.paint.Color.web("#1e88e5"));
+        selection.setStrokeWidth(2);
+        selection.setVisible(false);
+        selection.setManaged(false);
+        javafx.scene.layout.Pane pageHost = new javafx.scene.layout.Pane(pageImage, selection);
+        installFraming(pageHost);
+        ScrollPane imageScroll = new ScrollPane(pageHost);
         pageImage.fitWidthProperty().bind(javafx.beans.binding.Bindings.when(fitWidth.selectedProperty())
                 .then(imageScroll.widthProperty().subtract(20)).otherwise(0));
         imageHint.setWrapText(true);
@@ -239,7 +267,7 @@ final class ImportPane {
         imageBox.setPadding(new Insets(8));
         pageText.setEditable(false);
         pageText.setWrapText(true);
-        TabPane reference = new TabPane(new Tab("原始頁面", imageBox), new Tab("擷取文字", pageText));
+        reference = new TabPane(new Tab("原始頁面", imageBox), new Tab("擷取文字", pageText));
         reference.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
         SplitPane split = new SplitPane(editorScroll, reference);
@@ -318,7 +346,167 @@ final class ImportPane {
         long ocrPages = result.pages().stream().filter(p -> p.method() == ExtractionMethod.OCR).count();
         status.setText((result.cancelled() ? "已取消：完成 " : "完成：") + result.pages().size() + " / "
                 + result.totalPages() + " 頁（其中 " + ocrPages + " 頁使用 OCR）");
-        show(result.fileName(), result.pages(), ImportItem.fromSplit(QuestionSplitter.split(result.pages())));
+        com.exambattle.ocr.SplitResult split = QuestionSplitter.split(result.pages());
+        List<ImportItem> list = ImportItem.fromSplit(split);
+        show(result.fileName(), result.pages(), list);
+        autoCrop(split, list);
+    }
+
+    // ---------- 自動截圖（D-045）：選項看起來是圖片時，依選項記號的座標從原始頁面截圖
+
+    private void autoCrop(com.exambattle.ocr.SplitResult split, List<ImportItem> list) {
+        List<Integer> targets = new ArrayList<>();
+        for (int i = 0; i < split.questions().size(); i++) {
+            if (split.questions().get(i).imageOptions()) {
+                targets.add(i);
+            }
+        }
+        if (targets.isEmpty() || source == null) {
+            return;
+        }
+        Path file = source;
+        List<PageText> pageList = pages;
+        String before = status.getText();
+        status.setText(before + "；自動截取圖片選項中…");
+        Thread worker = new Thread(() -> {
+            Map<Integer, List<com.exambattle.ocr.TextBox>> words = new HashMap<>();
+            Map<Integer, BufferedImage> renders = new HashMap<>();
+            int done = 0;
+            for (int index : targets) {
+                com.exambattle.ocr.DraftQuestion q = split.questions().get(index);
+                Integer next = index + 1 < split.questions().size() ? split.questions().get(index + 1).number() : null;
+                try {
+                    int page = q.sourcePage();
+                    ExtractionMethod method = pageList.stream().filter(p -> p.page() == page).map(PageText::method)
+                            .findFirst().orElse(ExtractionMethod.TEXT_LAYER);
+                    List<com.exambattle.ocr.TextBox> pageWords = words.get(page);
+                    if (pageWords == null) {
+                        pageWords = com.exambattle.ocr.PageWords.of(file, page, method, OcrConfig.locate());
+                        words.put(page, pageWords);
+                    }
+                    Optional<List<com.exambattle.ocr.Region>> regions = com.exambattle.ocr.OptionRegions.locate(
+                            pageWords, page, q.number(), next, q.options().size());
+                    if (regions.isEmpty()) {
+                        continue;
+                    }
+                    BufferedImage render = renders.get(page);
+                    if (render == null) {
+                        render = PageImages.render(file, page, PageImages.CROP_DPI);
+                        renders.put(page, render);
+                    }
+                    List<DraftImage> crops = new ArrayList<>();
+                    for (com.exambattle.ocr.Region r : regions.get()) {
+                        crops.add(com.exambattle.client.gui.model.ImageTools.prepare(r.cropTrimmed(render)));
+                    }
+                    ImportItem item = list.get(index);
+                    done++;
+                    Platform.runLater(() -> {
+                        List<com.exambattle.client.gui.model.QuestionDraft.Option> options = new ArrayList<>();
+                        var draft = item.draft();
+                        for (int i = 0; i < draft.options().size(); i++) {
+                            var o = draft.options().get(i);
+                            options.add(i < crops.size() && o.image() == null ? o.withImage(crops.get(i)) : o);
+                        }
+                        item.setDraft(draft.withOptions(options));
+                        if (current == item) {
+                            select(item);
+                        }
+                        items.refresh();
+                        refreshSummary();
+                    });
+                } catch (ExtractionException | RuntimeException e) {
+                    // 截不到就留給使用者框選或自備圖片
+                }
+            }
+            int cropped = done;
+            Platform.runLater(() -> status.setText(before + "；自動截取 " + cropped + " / " + targets.size()
+                    + " 題的圖片選項，請對照原始頁面確認"));
+        }, "auto-crop");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    // ---------- 框選圖片（D-043）
+
+    /** ImageSlot 要求框選：切到原始頁面，拖曳完成後把截圖交給 receiver。 */
+    private void startFraming(String target, java.util.function.Consumer<DraftImage> receiver) {
+        if (source == null) {
+            Dialogs.error("框選需要原始檔。請先按「選擇原始檔以對照…」選擇原始檔（只在本機讀取）。");
+            return;
+        }
+        framingTarget = target;
+        framingReceiver = receiver;
+        reference.getSelectionModel().select(0);
+        imageHint.setText("請在下方頁面上拖曳，框出「" + target + "」的圖片範圍（按 Esc 取消）。");
+        pageImage.setStyle("-fx-cursor: crosshair;");
+    }
+
+    private void installFraming(javafx.scene.layout.Pane host) {
+        host.setOnMousePressed(e -> {
+            if (framingReceiver == null) {
+                return;
+            }
+            dragX = e.getX();
+            dragY = e.getY();
+            selection.setX(dragX);
+            selection.setY(dragY);
+            selection.setWidth(0);
+            selection.setHeight(0);
+            selection.setVisible(true);
+        });
+        host.setOnMouseDragged(e -> {
+            if (framingReceiver == null) {
+                return;
+            }
+            selection.setX(Math.min(dragX, e.getX()));
+            selection.setY(Math.min(dragY, e.getY()));
+            selection.setWidth(Math.abs(e.getX() - dragX));
+            selection.setHeight(Math.abs(e.getY() - dragY));
+        });
+        host.setOnMouseReleased(e -> {
+            if (framingReceiver == null) {
+                return;
+            }
+            javafx.geometry.Bounds view = pageImage.getBoundsInParent();
+            if (selection.getWidth() < 5 || selection.getHeight() < 5 || view.getWidth() <= 0) {
+                return;
+            }
+            com.exambattle.ocr.Region region = new com.exambattle.ocr.Region(current == null ? 1 : current.sourcePage(),
+                    (selection.getX() - view.getMinX()) / view.getWidth(), (selection.getY() - view.getMinY()) / view.getHeight(),
+                    selection.getWidth() / view.getWidth(), selection.getHeight() / view.getHeight());
+            java.util.function.Consumer<DraftImage> receiver = framingReceiver;
+            endFraming();
+            cropAsync(region, receiver);
+        });
+        host.setFocusTraversable(true);
+        host.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE && framingReceiver != null) {
+                endFraming();
+            }
+        });
+    }
+
+    private void endFraming() {
+        framingReceiver = null;
+        selection.setVisible(false);
+        pageImage.setStyle("");
+        showReference(current);
+    }
+
+    private void cropAsync(com.exambattle.ocr.Region region, java.util.function.Consumer<DraftImage> receiver) {
+        Path file = source;
+        String target = framingTarget;
+        Thread worker = new Thread(() -> {
+            try {
+                BufferedImage render = PageImages.render(file, region.page(), PageImages.CROP_DPI);
+                DraftImage image = com.exambattle.client.gui.model.ImageTools.prepare(region.cropTrimmed(render));
+                Platform.runLater(() -> receiver.accept(image));
+            } catch (ExtractionException e) {
+                Platform.runLater(() -> Dialogs.error("無法截取「" + target + "」的圖片：" + e.getMessage()));
+            }
+        }, "frame-crop");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     private void fail(String message) {
@@ -448,6 +636,9 @@ final class ImportPane {
         leaveGroup.setVisible(inGroup);
         leaveGroup.setManaged(inGroup);
         joinPrevious.setDisable(previousGroup(item) == null || previousGroup(item) == group);
+        groupImage.root().setVisible(inGroup);
+        groupImage.root().setManaged(inGroup);
+        groupImage.load(inGroup ? group.image() : null);
         if (!inGroup) {
             groupTitle.setText("不屬於題組");
             groupWarnings.setText("");
@@ -768,12 +959,24 @@ final class ImportPane {
         if (noAnswer > 0 && !Dialogs.confirm("有 " + noAnswer + " 題尚未設定正確答案，匯入後不會用於練習。仍要匯入嗎？")) {
             return;
         }
-        session.call(MessageType.LIST_SUBJECTS, null, SubjectList.class, subjects ->
-                session.call(MessageType.LIST_EXAMS, new ListExamsRequest(null), ExamList.class, exams -> {
-                    long me = session.state().me().userId();
-                    List<ExamSummary> mine = exams.exams().stream().filter(e -> e.owner().userId() == me).toList();
-                    showImportDialog(selected, subjects.subjects(), mine);
-                }));
+        // 圖片先逐張上傳（D-044）；相同內容的圖片伺服器只存一份，重新上傳不會重複
+        List<DraftImage> images = ImportItem.localImages(selected);
+        if (!images.isEmpty()) {
+            status.setText("上傳圖片 0 / " + images.size() + "…");
+        }
+        ImageUploader.upload(session, images, (doneCount, total) -> status.setText("上傳圖片 " + doneCount + " / " + total + "…"),
+                ids -> {
+                    ImportItem.applyUploaded(selected, ids);
+                    if (!images.isEmpty()) {
+                        status.setText("已上傳 " + images.size() + " 張圖片");
+                    }
+                    session.call(MessageType.LIST_SUBJECTS, null, SubjectList.class, subjects ->
+                            session.call(MessageType.LIST_EXAMS, new ListExamsRequest(null), ExamList.class, exams -> {
+                                long me = session.state().me().userId();
+                                List<ExamSummary> mine = exams.exams().stream().filter(e -> e.owner().userId() == me).toList();
+                                showImportDialog(selected, subjects.subjects(), mine);
+                            }));
+                }, Dialogs::error);
     }
 
     private void showImportDialog(List<ImportItem> selected, List<SubjectInfo> subjects, List<ExamSummary> mine) {
@@ -878,9 +1081,10 @@ final class ImportPane {
                     new ExamDraft(title.getText(), subject.getValue(), year.getText(), type.getText(),
                             makePublic.isSelected() ? com.exambattle.common.protocol.bank.Visibility.PUBLIC
                                     : com.exambattle.common.protocol.bank.Visibility.PRIVATE).toRequest(null),
-                    parts.questions(), parts.groups(), parts.groupIndexes());
+                    parts.questions(), parts.groups(), parts.groupIndexes(), parts.groupImageIds());
         }
-        return new ImportRequest(existing.getValue().id(), null, parts.questions(), parts.groups(), parts.groupIndexes());
+        return new ImportRequest(existing.getValue().id(), null, parts.questions(), parts.groups(), parts.groupIndexes(),
+                parts.groupImageIds());
     }
 
     // ---------- 草稿

@@ -12,19 +12,34 @@ import java.util.List;
  *                        ADD_QUESTION／UPDATE_QUESTION 帶入時表示加入同一份考卷中既有的題組
  * @param passage         題組文章；不屬於題組時為 null。ADD_QUESTION／UPDATE_QUESTION 只帶 passage（groupId 為 null）
  *                        時表示建立新題組；兩者都是 null 表示不屬於題組
+ * @param imageId         題幹圖片（D-043）；null 表示沒有
+ * @param passageImageId  題組文章的圖片；建立新題組時一併設定，加入既有題組時忽略
  */
 public record QuestionData(Long id, QuestionType type, String content, String explanation,
                            List<OptionData> options, Boolean trueFalseAnswer, boolean answerSet,
-                           Long groupId, String passage) {
+                           Long groupId, String passage, String imageId, String passageImageId) {
 
-    /** 不屬於題組的題目。 */
+    /** 不屬於題組、沒有圖片的題目。 */
     public QuestionData(Long id, QuestionType type, String content, String explanation,
                         List<OptionData> options, Boolean trueFalseAnswer, boolean answerSet) {
-        this(id, type, content, explanation, options, trueFalseAnswer, answerSet, null, null);
+        this(id, type, content, explanation, options, trueFalseAnswer, answerSet, null, null, null, null);
     }
 
-    /** 換成另一個題組（或 null 表示不屬於題組）。 */
+    /** 沒有圖片的題目。 */
+    public QuestionData(Long id, QuestionType type, String content, String explanation,
+                        List<OptionData> options, Boolean trueFalseAnswer, boolean answerSet,
+                        Long groupId, String passage) {
+        this(id, type, content, explanation, options, trueFalseAnswer, answerSet, groupId, passage, null, null);
+    }
+
+    /** 換成另一個題組（或 null 表示不屬於題組）；題組文章圖片一併清除。 */
     public QuestionData withGroup(Long groupId, String passage) {
-        return new QuestionData(id, type, content, explanation, options, trueFalseAnswer, answerSet, groupId, passage);
+        return withGroup(groupId, passage, null);
+    }
+
+    /** 換成另一個題組，並指定新題組文章的圖片。 */
+    public QuestionData withGroup(Long groupId, String passage, String passageImageId) {
+        return new QuestionData(id, type, content, explanation, options, trueFalseAnswer, answerSet, groupId, passage,
+                imageId, passageImageId);
     }
 }

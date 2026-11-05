@@ -180,7 +180,7 @@ final class ClientHandler implements Runnable, Session {
                 }
                 case LIST_SUBJECTS, CREATE_SUBJECT, LIST_EXAMS, GET_EXAM, CREATE_EXAM, UPDATE_EXAM, DELETE_EXAM,
                      ADD_QUESTION, UPDATE_QUESTION, DELETE_QUESTION, REORDER_QUESTIONS, IMPORT_QUESTIONS, UPDATE_GROUP,
-                     TAKE_DOWN_EXAM -> {
+                     TAKE_DOWN_EXAM, UPLOAD_IMAGE, GET_IMAGE -> {
                     requireLoggedIn(message);
                     context.bank().handle(this, type.get(), message);
                 }
